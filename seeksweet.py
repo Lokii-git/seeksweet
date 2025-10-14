@@ -400,7 +400,7 @@ def run_seek_tool(tool, target_file=None):
     cmd = [sys.executable, str(script_path)]
     
     # Tools that use -f flag
-    if tool['name'] in ['DCSeek', 'PrintSeek']:
+    if tool['name'] in ['DCSeek', 'PrintSeek', 'ShareSeek']:
         cmd.extend(['-f', target_file, '-v'])
     else:
         # Tools that use positional argument

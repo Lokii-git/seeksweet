@@ -16,11 +16,12 @@ import ipaddress
 import argparse
 import json
 import os
+import sys
+import re
 
 # Import shared utilities
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from seek_utils import find_ip_list
-import re
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple
