@@ -1,29 +1,118 @@
-# SeekSweet - Optional Dependencies
+# SeekSweet - Python Dependencies
+# =================================
 #
-# Core SeekSweet functionality requires ONLY Python 3.8+ standard library.
-# The tools below are optional and enable enhanced features.
+# INSTALLATION:
+#   pip install -r requirements.txt
+#
+# NOTE: Most tools work with Python stdlib only. These packages enable
+# enhanced features in specific tools.
 
-# For JSON handling improvements (already in stdlib, but newer version useful)
-# No additional packages required for basic functionality
-
-# External Tool Dependencies (install separately):
 # ============================================
-# These are not Python packages - install via OS package manager:
-#
-# - enum4linux     (for DCSeek enumeration)
-# - ldapsearch     (for LDAPSeek queries - part of ldap-utils)
-# - smbclient      (for SMBSeek share testing - part of smbclient)
-# - nmap           (for VulnSeek NSE scripts)
-# - snmpwalk       (for SNMPSeek enumeration - part of snmp)
-# - crackmapexec   (optional for enhanced testing)
-# - impacket       (optional for Kerberos attacks)
-#
-# Ubuntu/Kali:
-#   sudo apt-get install enum4linux ldap-utils smbclient nmap snmp
-#
-# Windows:
-#   Download and install individual tools from their respective sources
-#   Many tools are available via chocolatey: choco install nmap
+# REQUIRED Python Packages (HTTP/Web Tools)
+# ============================================
 
-# If you need specific Python packages for custom modifications:
-# (None required by default - add your own as needed)
+# Used by: WebSeek, WinRMSeek, BackupSeek
+requests>=2.31.0
+
+# Used by: WebSeek, WinRMSeek, BackupSeek, PanelSeek
+urllib3>=2.0.0
+
+# ============================================
+# OPTIONAL Python Packages (Database Tools)
+# ============================================
+# Uncomment the databases you want to test with DbSeek:
+
+# MySQL/MariaDB support
+# PyMySQL>=1.1.0
+
+# PostgreSQL support
+# psycopg2-binary>=2.9.9
+
+# Microsoft SQL Server support
+# pymssql>=2.2.11
+
+# MongoDB support
+# pymongo>=4.6.0
+
+# Redis support
+# redis>=5.0.0
+
+# ============================================
+# OPTIONAL Python Packages (WinRM)
+# ============================================
+# Uncomment for enhanced WinRM authentication testing:
+
+# pywinrm>=0.4.3
+
+# ============================================
+# External Tool Dependencies (Not pip)
+# ============================================
+# These are command-line tools that must be installed separately:
+#
+# CRITICAL (for full functionality):
+# - enum4linux     → DCSeek enumeration
+# - ldapsearch     → LDAPSeek queries (part of ldap-utils)
+# - smbclient      → SMBSeek/ShareSeek share testing
+# - nmap           → VulnSeek NSE scripts
+# - snmpwalk       → SNMPSeek enumeration (part of snmp)
+#
+# OPTIONAL (enhanced features):
+# - crackmapexec   → Advanced SMB/WinRM testing
+# - impacket-*     → Kerberos attacks (GetNPUsers.py, GetUserSPNs.py)
+# - rpcclient      → SMB RPC enumeration
+# - nikto          → WebSeek vulnerability scanning
+#
+# ============================================
+# Installation Commands by OS
+# ============================================
+#
+# Kali Linux / Debian / Ubuntu:
+#   sudo apt-get update
+#   sudo apt-get install -y enum4linux ldap-utils smbclient nmap snmp-mibs-downloader
+#   sudo apt-get install -y crackmapexec impacket-scripts nikto
+#
+# RHEL / CentOS / Fedora:
+#   sudo yum install -y smbclient openldap-clients nmap net-snmp-utils
+#
+# macOS (Homebrew):
+#   brew install samba openldap nmap net-snmp
+#
+# Windows (Chocolatey):
+#   choco install nmap
+#   # Most tools require WSL or manual installation from official sources
+#
+# ============================================
+# Python Version Requirements
+# ============================================
+# Python 3.8 or higher required
+# Tested on: Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13
+#
+# ============================================
+# Tool-Specific Requirements
+# ============================================
+#
+# DCSeek:     enum4linux (optional, for detailed DC enumeration)
+# LDAPSeek:   ldapsearch (required for LDAP queries)
+# SMBSeek:    smbclient (required for share enumeration)
+# ShareSeek:  smbclient (required for share access testing)
+# KerbSeek:   impacket GetUserSPNs.py, GetNPUsers.py (required)
+# CredSeek:   smbclient (optional, for share credential searches)
+# WinRMSeek:  requests, urllib3 (required for HTTP checks)
+# WebSeek:    requests, urllib3 (required), nikto (optional)
+# PanelSeek:  urllib3 (required)
+# DbSeek:     PyMySQL, psycopg2, pymssql, pymongo, redis (all optional)
+# BackupSeek: requests, urllib3 (required)
+# PrintSeek:  None (stdlib only)
+# SNMPSeek:   snmpwalk (required for SNMP enumeration)
+# VulnSeek:   nmap (required for vulnerability scanning)
+#
+# ============================================
+# Minimal Install (Core Functionality)
+# ============================================
+# For basic functionality, install only:
+#   pip install requests urllib3
+#
+# Then install system tools:
+#   Kali: sudo apt-get install enum4linux ldap-utils smbclient nmap snmp
+#
+# ============================================
