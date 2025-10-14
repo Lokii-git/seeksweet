@@ -1,0 +1,266 @@
+PANELSEEK - QUICK REFERENCE
+======================================================================
+Exposed Admin Panel Discovery Tool v1.0
+
+BASIC USAGE
+======================================================================
+./panelseek.py                    # Basic scan, iplist.txt
+./panelseek.py -v                 # Verbose output
+./panelseek.py -f targets.txt     # Custom input file
+
+SCAN MODES
+======================================================================
+./panelseek.py --quick            # Fast (3 paths: /, /admin, /login)
+./panelseek.py                    # Default (7 common paths)
+./panelseek.py --full             # Thorough (30+ paths)
+
+PERFORMANCE OPTIONS
+======================================================================
+-w N      --workers N             # Number of threads (default: 10)
+-t N      --timeout N             # Connection timeout (default: 2s)
+          --ports [PORTS...]      # Custom ports to scan
+
+COMMON COMMANDS
+======================================================================
+./panelseek.py --quick -w 50 -v   # Fast scan, max speed
+./panelseek.py --full -w 5 -t 5   # Thorough, slow and stable
+./panelseek.py --ports 80 443     # Only HTTP/HTTPS
+./panelseek.py -f /tmp/ips.txt    # Custom input file
+
+OUTPUT FILES
+======================================================================
+panellist.txt                     # URLs only (one per line)
+panel_details.txt                 # Human-readable details
+panel_details.json                # JSON format for automation
+
+CONFIDENCE LEVELS
+======================================================================
+[+++] HIGH      - Vendor signature detected (Cisco, FortiGate, etc.)
+[++]  MEDIUM    - Auth page or admin indicators
+[+]   LOW       - Minimal indicators (may be false positive)
+
+DETECTED PANEL TYPES (40+)
+======================================================================
+Network Devices:
+  Cisco, Juniper, pfSense, FortiGate, Palo Alto, SonicWall, WatchGuard,
+  Netgear, TP-Link, Ubiquiti, MikroTik, DD-WRT, OpenWrt, Tomato
+
+Management Interfaces:
+  VMware (vSphere, ESXi, vCenter), Dell iDRAC, HP iLO, IPMI, Webmin,
+  cPanel, WHM, Plesk, Proxmox VE
+
+Application Dashboards:
+  Jenkins, Grafana, Kibana, Prometheus, Portainer, Rancher,
+  Kubernetes Dashboard, Docker
+
+Database Tools:
+  phpMyAdmin, Adminer, MongoDB Express
+
+DEFAULT PORTS SCANNED
+======================================================================
+80        HTTP
+443       HTTPS
+8080      Alt HTTP
+8443      Alt HTTPS
+8000      Dev
+8888      Alt web
+9090      Management
+10000     Webmin
+3000      Grafana/Dev
+5000      Flask/Dev
+4443      Alt HTTPS
+
+PATHS CHECKED
+======================================================================
+Quick Mode (3):
+  /, /admin, /login
+
+Default Mode (7):
+  /, /admin, /login, /admin.php, /administrator, /console, /dashboard
+
+Full Mode (30+):
+  /, /admin, /login, /admin.php, /administrator, /wp-admin, /admin/login,
+  /user/login, /console, /dashboard, /management, /config, /system,
+  /setup, /cgi-bin, /web, /ui, /portal, /api, /manager/html,
+  /phpmyadmin, /adminer.php, /webmin, /cpanel, /plesk, /admin/index.php,
+  /login.php, /signin
+
+COMMON DEFAULT CREDENTIALS
+======================================================================
+Routers/Switches:
+  Cisco         admin/admin, admin/cisco
+  Netgear       admin/password
+  TP-Link       admin/admin
+  Ubiquiti      ubnt/ubnt
+  MikroTik      admin/(blank)
+  DD-WRT        root/admin
+
+Management:
+  Webmin        root/(root password)
+  Jenkins       admin/admin
+  Tomcat        admin/admin, tomcat/tomcat
+
+Applications:
+  Grafana       admin/admin
+  Kibana        elastic/changeme
+  Portainer     admin/(set on first login)
+
+WORKFLOW EXAMPLES
+======================================================================
+# Basic discovery
+echo "192.168.1.0/24" > iplist.txt
+./panelseek.py --full -v
+
+# Check for default credentials
+grep "DEFAULT CREDS" panel_details.txt
+
+# Screenshot panels
+eyewitness -f panellist.txt --web
+
+# Extract URLs by confidence
+grep "\[+++\]" panel_details.txt    # High confidence only
+
+# Extract by vendor
+cat panel_details.json | jq -r '.[] | select(.panels[].vendor == "Cisco")'
+
+JSON FILTERING EXAMPLES
+======================================================================
+# All panel URLs
+cat panel_details.json | jq -r '.[] | .panels[].url'
+
+# Panels with default creds likely
+cat panel_details.json | jq -r '.[] | .panels[] | select(.default_creds_likely == true) | .url'
+
+# HTTPS panels only
+cat panel_details.json | jq -r '.[] | .panels[] | select(.protocol == "https") | .url'
+
+# Group by vendor
+cat panel_details.json | jq -r '.[] | .panels[].vendor' | sort | uniq -c | sort -rn
+
+# High confidence panels
+cat panel_details.json | jq -r '.[] | .panels[] | select(.confidence == "high") | .url'
+
+# Extract IPs with panels
+cat panel_details.json | jq -r '.[] | .ip'
+
+INTEGRATION WITH OTHER TOOLS
+======================================================================
+# EyeWitness screenshots
+./panelseek.py && eyewitness -f panellist.txt --web --no-prompt
+
+# Nmap detailed scan
+cat panellist.txt | sed 's|http[s]*://||' | cut -d: -f1 | sort -u > ips.txt
+nmap -sV -sC -iL ips.txt
+
+# Hydra brute force (authorized testing only)
+# Example: Cisco HTTP auth
+hydra -L users.txt -P passwords.txt 192.168.1.1 http-get /admin
+
+# Burp Suite import
+# Load panellist.txt into Burp target scope for testing
+
+PERFORMANCE TUNING
+======================================================================
+Small network (<100 hosts):
+  ./panelseek.py --full -w 10 -t 3
+
+Medium network (100-1000 hosts):
+  ./panelseek.py -w 25 -t 2
+
+Large network (1000+ hosts):
+  ./panelseek.py --quick -w 100 -t 1
+
+Behind firewall/slow network:
+  ./panelseek.py -w 5 -t 5 --full
+
+TROUBLESHOOTING
+======================================================================
+No panels found:
+  - Try --full mode for more paths
+  - Increase timeout: -t 5
+  - Check network connectivity
+  - Verify ports are open: nmap -p 80,443 <target>
+
+Too many false positives:
+  - Use --quick mode
+  - Review confidence levels
+  - Check panel_details.txt for indicators
+
+Scan too slow:
+  - Reduce workers: -w 5
+  - Use --quick mode
+  - Scan fewer ports: --ports 80 443
+
+SSL errors:
+  - PanelSeek handles self-signed certs automatically
+  - Check if host is actually running HTTPS
+
+INPUT FILE FORMAT
+======================================================================
+iplist.txt can contain:
+  - Single IPs: 192.168.1.1
+  - CIDR ranges: 192.168.1.0/24
+  - Mixed format
+  - Comments with #
+  - Blank lines (ignored)
+
+Example:
+  192.168.1.1
+  192.168.1.10
+  10.0.0.0/24
+  # DMZ network
+  172.16.0.0/16
+
+SECURITY NOTES
+======================================================================
+⚠ AUTHORIZED USE ONLY
+  - Obtain written authorization before scanning
+  - Web scanning generates logs on target servers
+  - May trigger IDS/IPS alerts
+  - WAFs may block aggressive scanning
+  - Store results securely
+  - Follow responsible disclosure for findings
+
+TIPS & TRICKS
+======================================================================
+1. Start with --quick to identify low-hanging fruit
+2. Use --full for comprehensive assessments
+3. Always check "DEFAULT CREDS LIKELY" findings first
+4. Screenshot all panels with EyeWitness
+5. Cross-reference with Shodan/CVE databases
+6. Look for version numbers in titles/headers
+7. Check robots.txt and sitemap.xml on found panels
+8. Note redirect chains - may reveal additional URLs
+9. Export to JSON for automation/reporting
+10. Combine with other Seek tools (DCSeek, PrintSeek)
+
+SEEK TOOLS SUITE INTEGRATION
+======================================================================
+# Full network assessment workflow
+./dcseek.py                       # Find domain controllers
+./printseek.py                    # Find printers
+./panelseek.py --full             # Find admin panels
+
+# Combine all found assets
+cat dclist.txt printerlist.txt > all_assets.txt
+cat panellist.txt >> all_assets.txt
+
+# Comprehensive enumeration
+./dcseek.py -e                    # Enumerate DCs
+./printseek.py -e                 # Enumerate printers
+# Manually test panels from panellist.txt
+
+VERSION INFO
+======================================================================
+Version: 1.0
+Platform: Kali Linux 2024+
+Python: 3.6+
+Dependencies: None (stdlib only)
+
+SUPPORT
+======================================================================
+Read full documentation: PANELSEEK_README.md
+Report issues: Internal Red Team
+Updates: Check SEEK_TOOLS_CHANGELOG.md
+
+======================================================================

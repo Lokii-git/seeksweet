@@ -1,0 +1,29 @@
+# SeekSweet - Optional Dependencies
+#
+# Core SeekSweet functionality requires ONLY Python 3.8+ standard library.
+# The tools below are optional and enable enhanced features.
+
+# For JSON handling improvements (already in stdlib, but newer version useful)
+# No additional packages required for basic functionality
+
+# External Tool Dependencies (install separately):
+# ============================================
+# These are not Python packages - install via OS package manager:
+#
+# - enum4linux     (for DCSeek enumeration)
+# - ldapsearch     (for LDAPSeek queries - part of ldap-utils)
+# - smbclient      (for SMBSeek share testing - part of smbclient)
+# - nmap           (for VulnSeek NSE scripts)
+# - snmpwalk       (for SNMPSeek enumeration - part of snmp)
+# - crackmapexec   (optional for enhanced testing)
+# - impacket       (optional for Kerberos attacks)
+#
+# Ubuntu/Kali:
+#   sudo apt-get install enum4linux ldap-utils smbclient nmap snmp
+#
+# Windows:
+#   Download and install individual tools from their respective sources
+#   Many tools are available via chocolatey: choco install nmap
+
+# If you need specific Python packages for custom modifications:
+# (None required by default - add your own as needed)

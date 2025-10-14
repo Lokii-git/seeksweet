@@ -1,0 +1,313 @@
+SMBSEEK - QUICK REFERENCE
+======================================================================
+SMB Share Discovery and Enumeration Tool v1.0
+
+BASIC USAGE
+======================================================================
+./smbseek.py                      # Basic scan, iplist.txt
+./smbseek.py -v                   # Verbose output
+./smbseek.py -f targets.txt       # Custom input file
+
+ACCESS TESTING
+======================================================================
+./smbseek.py -t                   # Test share access
+./smbseek.py -t -u admin -p pass  # Test with credentials
+./smbseek.py -t -v                # Test access, verbose
+
+PERFORMANCE OPTIONS
+======================================================================
+-w N      --workers N             # Number of threads (default: 10)
+          --timeout N             # Connection timeout (default: 2s)
+-u USER   --username USER         # Username for auth
+-p PASS   --password PASS         # Password for auth
+
+COMMON COMMANDS
+======================================================================
+./smbseek.py -t -v                # Full scan with access testing
+./smbseek.py -w 50 --timeout 1    # Fast scan, large networks
+./smbseek.py -u admin -p pass -t  # Authenticated scan
+./smbseek.py -f ips.txt -w 25 -t  # Custom file, access testing
+
+OUTPUT FILES
+======================================================================
+smblist.txt                       # SMB host IPs (one per line)
+sharelist.txt                     # Accessible shares (UNC paths)
+smb_details.txt                   # Human-readable details
+smb_details.json                  # JSON format for automation
+
+SECURITY FINDINGS
+======================================================================
+[HIGH]    - Accessible shares or null session
+[MEDIUM]  - Shares enumerated
+[LOW]     - SMB enabled only
+
+⚠ NULL SESSION    - Anonymous share enumeration allowed
+⚠ GUEST ACCESS    - Guest account can enumerate shares
+★ INTERESTING     - High-value share names detected
+
+INTERESTING SHARES (HIGH-VALUE TARGETS)
+======================================================================
+ADMIN$        - Administrative share (C:\Windows)
+C$, D$        - Drive shares
+SYSVOL        - Domain Group Policy (DC only)
+NETLOGON      - Domain logon scripts (DC only)
+Users         - User home directories
+Public        - Public file share
+Backup        - Backup files (common target)
+Backups       - Backup storage
+IT            - IT resources
+Software      - Software installers
+Share         - General file shares
+
+SHARE TYPES
+======================================================================
+Disk          - File/folder share
+IPC           - Inter-Process Communication
+Printer       - Printer share
+Device        - Device share
+
+WORKFLOW EXAMPLES
+======================================================================
+# Basic discovery
+echo "192.168.1.0/24" > iplist.txt
+./smbseek.py -v
+
+# Test for null sessions
+./smbseek.py
+grep "NULL SESSION" smb_details.txt
+
+# Test share access
+./smbseek.py -t
+cat sharelist.txt
+
+# Authenticated scan
+./smbseek.py -u 'CORP\admin' -p 'password' -t -v
+
+# Fast scan, large network
+./smbseek.py -w 100 --timeout 1
+
+JSON FILTERING EXAMPLES
+======================================================================
+# Extract all share names
+cat smb_details.json | jq -r '.[] | .shares[].name'
+
+# Hosts with null sessions
+cat smb_details.json | jq -r '.[] | select(.null_session == true) | .ip'
+
+# Accessible shares only
+cat smb_details.json | jq -r '.[] | select(.accessible_shares | length > 0) | .ip'
+
+# Interesting shares
+cat smb_details.json | jq -r '.[] | select(.interesting_shares | length > 0)'
+
+# Extract UNC paths
+cat smb_details.json | jq -r '.[] | .accessible_shares[] | "\\\\(.ip)\\(.name)"'
+
+INTEGRATION WITH OTHER TOOLS
+======================================================================
+# enum4linux on all SMB hosts
+cat smblist.txt | while read ip; do enum4linux -a $ip; done
+
+# CrackMapExec credential testing
+cme smb smblist.txt -u admin -p passwords.txt
+
+# CrackMapExec spider shares
+cme smb smblist.txt -u admin -p pass --spider C$ --pattern .*
+
+# Mount accessible share (Linux)
+sudo mount -t cifs //192.168.1.50/Users /mnt/share -o username=guest
+
+# Connect with smbclient
+smbclient //192.168.1.50/Users -U guest%
+
+# Download files with smbget
+smbget -R smb://192.168.1.50/Public/
+
+# Impacket smbclient.py
+smbclient.py guest@192.168.1.50
+
+# Metasploit SMB modules
+use auxiliary/scanner/smb/smb_enumshares
+set RHOSTS file:/path/to/smblist.txt
+
+ATTACK VECTORS (AUTHORIZED TESTING)
+======================================================================
+# Null session enumeration
+rpcclient -U "" 192.168.1.10
+enum4linux -U 192.168.1.10
+
+# Browse accessible shares
+smbclient //192.168.1.50/Users -U guest%
+smb: \> recurse ON
+smb: \> prompt OFF
+smb: \> mget *
+
+# Search for sensitive files
+cme smb 192.168.1.50 -u admin -p pass --spider Users --pattern pass
+cme smb 192.168.1.50 -u admin -p pass --spider C$ --pattern .*\.conf
+
+# GPP password extraction (SYSVOL)
+# Look for Groups.xml files with cpassword attribute
+findstr /S cpassword \\DC\sysvol\*.xml
+
+PERFORMANCE TUNING
+======================================================================
+Small network (<100 hosts):
+  ./smbseek.py -w 10 --timeout 2 -t
+
+Medium network (100-1000 hosts):
+  ./smbseek.py -w 25 --timeout 2
+
+Large network (1000+ hosts):
+  ./smbseek.py -w 100 --timeout 1
+
+With access testing (slower):
+  ./smbseek.py -w 20 --timeout 3 -t
+
+Behind firewall/slow network:
+  ./smbseek.py -w 5 --timeout 5 -t
+
+TROUBLESHOOTING
+======================================================================
+No shares found:
+  - Verify smbclient: which smbclient
+  - Try with credentials: -u username -p password
+  - Increase timeout: --timeout 5
+  - Check firewall/connectivity
+
+Access denied:
+  - Null session may be disabled
+  - Try guest account (automatic)
+  - Use valid credentials
+  - Check domain/workgroup settings
+
+Timeouts:
+  - Increase timeout: --timeout 5
+  - Reduce workers: -w 5
+  - Check network latency
+
+smbclient not found:
+  sudo apt install smbclient
+
+Permission denied:
+  chmod +x smbseek.py
+
+INPUT FILE FORMAT
+======================================================================
+iplist.txt can contain:
+  - Single IPs: 192.168.1.1
+  - CIDR ranges: 192.168.1.0/24
+  - Mixed format
+  - Comments with #
+  - Blank lines (ignored)
+
+Example:
+  192.168.1.10
+  192.168.1.50
+  10.0.0.0/24
+  # DMZ network
+  172.16.0.0/16
+
+COMMON CREDENTIALS TO TEST
+======================================================================
+Domain Accounts:
+  administrator / admin / Administrator
+  DOMAIN\administrator
+  admin@domain.local
+
+Local Accounts:
+  administrator:password
+  admin:admin
+  guest:(blank)
+  backup:backup
+
+Default Passwords:
+  Password123
+  P@ssw0rd
+  Company123
+  Welcome1
+
+SECURITY NOTES
+======================================================================
+⚠ AUTHORIZED USE ONLY
+  - Obtain written authorization before scanning
+  - SMB scanning generates logs on target systems
+  - Failed auth attempts may lock accounts
+  - May trigger IDS/IPS alerts
+  - Store results securely (sensitive data)
+  - Follow responsible disclosure
+
+HIGH-RISK FINDINGS
+======================================================================
+Critical:
+  - Null sessions on Domain Controllers
+  - C$ or ADMIN$ accessible
+  - Backup shares accessible
+  - Domain admin credentials in shares
+
+High:
+  - User home directories readable
+  - IT/Software shares accessible
+  - SYSVOL readable (GPP passwords)
+  - Write access to any share
+
+Medium:
+  - Guest access enabled
+  - Interesting shares enumerated
+  - Share comments reveal info
+
+REMEDIATION RECOMMENDATIONS
+======================================================================
+1. Disable null sessions (RestrictAnonymous = 2)
+2. Disable guest account
+3. Remove unnecessary shares (C$, ADMIN$)
+4. Implement SMB signing
+5. Use SMBv3 encryption
+6. Audit share permissions regularly
+7. Monitor SMB access logs
+8. Segment SMB traffic (separate VLANs)
+9. Strong passwords on service accounts
+10. Least privilege access
+
+SEEK TOOLS SUITE INTEGRATION
+======================================================================
+# Full internal assessment workflow
+./dcseek.py --enum              # Find DCs, enumerate users
+./printseek.py -c private       # Find printers
+./panelseek.py --full           # Find admin panels
+./smbseek.py -t -v              # Find SMB shares
+
+# Use DCSeek users for SMB testing
+cat dcseek/enum4linux_summary.json | jq -r '.[].users[]' > users.txt
+./smbseek.py -u admin -p passwords.txt
+
+# Combine all asset lists
+cat dcseek/dclist.txt printerlist.txt smblist.txt > all_assets.txt
+
+TIPS & TRICKS
+======================================================================
+1. Start without credentials - null sessions often work
+2. Guest access is automatic fallback
+3. Focus on SYSVOL, NETLOGON, C$, Backups
+4. Use -t flag to know what's actually readable
+5. Check SYSVOL for GPP passwords (Groups.xml)
+6. Spider accessible shares with CrackMapExec
+7. Download sensitive files (passwords, configs)
+8. Cross-reference with DCSeek enumerated users
+9. Test weak passwords on admin shares
+10. Export JSON for automation/reporting
+
+VERSION INFO
+======================================================================
+Version: 1.0
+Platform: Kali Linux 2024+
+Python: 3.6+
+Dependencies: smbclient
+
+SUPPORT
+======================================================================
+Read full documentation: SMBSEEK_README.md
+Report issues: Internal Red Team
+Updates: Check SEEK_TOOLS_CHANGELOG.md
+
+======================================================================

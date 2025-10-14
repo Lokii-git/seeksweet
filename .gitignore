@@ -1,0 +1,61 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# SeekSweet specific
+.seeksweet_status.json
+*list.txt
+*_details.txt
+*_details.json
+*_creds.txt
+*_access.txt
+*_hashes.txt
+*_info.txt
+enum4linux_summary.txt
+findings.txt
+git_repos.txt
+backup_files.txt
+users.txt
+spns.txt
+asrep_users.txt
+admin_users.txt
+found_files.txt
+found_creds.txt
+sharelist.txt
+share_details.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+test_iplist.txt
+test_*.txt
+temp/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# Environment
+venv/
+env/
+ENV/
+.venv/
+
+# OS
+Thumbs.db
+desktop.ini

@@ -1,0 +1,120 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            DCSeek Quick Reference                            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+USAGE
+═════
+  ./dcseek.py [OPTIONS]
+
+COMMON COMMANDS
+═══════════════
+  ./dcseek.py                      # Basic DC discovery
+  ./dcseek.py --enum               # Discovery + enumeration
+  ./dcseek.py --enum-only          # Only enumerate (skip discovery)
+  ./dcseek.py -v --enum            # Verbose with enumeration
+  ./dcseek.py -f targets.txt       # Custom input file
+
+OPTIONS
+═══════
+  -f, --file FILE          Input IP file (default: iplist.txt)
+  -t, --timeout SECS       Connection timeout (default: 1.0)
+  -w, --workers NUM        Concurrent workers (default: 10)
+  -o, --output FILE        Output file (default: domain_controllers.txt)
+  -v, --verbose            Show all scanned hosts
+  --enum                   Run enum4linux on found DCs
+  --enum-only              Only enumerate from dclist.txt
+  --dclist FILE            DC list file (default: dclist.txt)
+  --enum-dir DIR           Enum output directory (default: enum4linux_results)
+
+OUTPUT FILES
+════════════
+  dclist.txt                     List of DC IPs (one per line)
+  domain_controllers.txt         Detailed DC information
+  enum4linux_summary.txt         Human-readable enum results
+  enum4linux_summary.json        JSON format enum results
+  enum4linux_results/            Raw enum4linux output files
+
+IPLIST.TXT FORMAT
+═════════════════
+  192.168.1.10              # Single IP
+  10.0.0.1                  # Another IP
+  172.16.0.0/24             # CIDR notation
+  # Comments start with #
+
+WORKFLOW EXAMPLES
+═════════════════
+
+1. Full Discovery + Enumeration
+   ./dcseek.py --enum -v
+   
+2. Re-enumerate Known DCs
+   ./dcseek.py --enum-only
+   
+3. Fast Network Sweep
+   echo "10.0.0.0/24" > iplist.txt
+   ./dcseek.py -w 50 -t 0.5
+   
+4. Use with CrackMapExec
+   ./dcseek.py
+   cme smb $(cat dclist.txt) -u user -p pass
+   
+5. Extract Users
+   ./dcseek.py --enum
+   cat enum4linux_summary.json | jq -r '.[].users[]' > users.txt
+
+DETECTED DC CRITERIA
+════════════════════
+  A host is identified as a DC if ALL are open:
+    - Port 88  (Kerberos)
+    - Port 389 (LDAP)
+    - Port 445 (SMB)
+
+PARSED ENUM DATA
+════════════════
+  ✓ Domain users            ✓ SMB shares
+  ✓ Domain groups           ✓ Password policy
+  ✓ Domain name             ✓ OS information
+
+PERFORMANCE TUNING
+══════════════════
+  Fast:      ./dcseek.py -w 50 -t 0.5
+  Balanced:  ./dcseek.py -w 10 -t 1.0  (default)
+  Thorough:  ./dcseek.py -w 5 -t 3.0
+
+TROUBLESHOOTING
+═══════════════
+  No DCs found?
+    → Try verbose: -v
+    → Increase timeout: -t 3
+    → Verify network: ping <ip>
+  
+  enum4linux not found?
+    → sudo apt install enum4linux
+  
+  Permission denied?
+    → chmod +x dcseek.py
+
+INTEGRATION
+═══════════
+  CrackMapExec:   cme smb -iL dclist.txt -u ... -p ...
+  Nmap:           nmap -iL dclist.txt -sV -sC
+  Responder:      Use DCs for targeted attacks
+  Bloodhound:     Import users for AD mapping
+
+TIPS
+════
+  • Use --enum-only to re-run enumeration without rescanning
+  • JSON output perfect for custom scripts
+  • dclist.txt can be edited manually before --enum-only
+  • Increase workers (-w) for larger networks
+  • Use -v to debug connection issues
+
+SECURITY NOTE
+═════════════
+  ⚠ Authorized testing only
+  ⚠ May trigger IDS/IPS alerts
+  ⚠ Store results securely
+
+═══════════════════════════════════════════════════════════════════════════════
+Version: 1.1 | For Kali Linux | Tested: October 2025
+═══════════════════════════════════════════════════════════════════════════════

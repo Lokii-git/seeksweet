@@ -1,0 +1,175 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         PrintSeek Quick Reference                            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+USAGE
+═════
+  ./printseek.py [OPTIONS]
+
+COMMON COMMANDS
+═══════════════
+  ./printseek.py                      # Basic printer discovery
+  ./printseek.py -c private           # Use 'private' SNMP community
+  ./printseek.py --snmp-only          # Only enumerate (skip discovery)
+  ./printseek.py -v                   # Verbose mode
+  ./printseek.py -f targets.txt       # Custom input file
+
+OPTIONS
+═══════
+  -f, --file FILE          Input IP file (default: iplist.txt)
+  -t, --timeout SECS       Connection timeout (default: 1.0)
+  -w, --workers NUM        Concurrent workers (default: 10)
+  -o, --output FILE        Output file (default: printer_details.txt)
+  -v, --verbose            Show all scanned hosts
+  -c, --community STR      SNMP community string (default: public)
+  --snmp-only              Only enumerate from printerlist.txt
+  --printerlist FILE       Printer list file (default: printerlist.txt)
+
+OUTPUT FILES
+════════════
+  printerlist.txt              List of printer IPs (one per line)
+  printer_details.txt          Human-readable printer information
+  printer_details.json         JSON format for automation
+
+DETECTED PRINTER PORTS
+══════════════════════
+  9100  - HP JetDirect (Raw printing)
+  515   - LPD/LPR (Line Printer Daemon)
+  631   - IPP/CUPS (Internet Printing Protocol)
+  161   - SNMP (Management)
+  80    - HTTP Web Interface
+  443   - HTTPS Web Interface
+  8080  - Alternate Web
+  21    - FTP (File Transfer)
+
+CONFIDENCE LEVELS
+═════════════════
+  HIGH    - Port 9100 or 631 open + SNMP data retrieved
+  MEDIUM  - 2+ printer ports open, or SNMP + printer hostname
+  LOW     - Single printer port open (needs verification)
+
+WORKFLOW EXAMPLES
+═════════════════
+
+1. Basic Discovery
+   ./printseek.py -v
+   
+2. Try Different SNMP Communities
+   ./printseek.py -c public
+   ./printseek.py -c private
+   ./printseek.py -c admin
+   
+3. Re-enumerate Known Printers
+   ./printseek.py --snmp-only -c private
+   
+4. Fast Network Sweep
+   echo "10.0.0.0/24" > iplist.txt
+   ./printseek.py -w 50 -t 0.5
+   
+5. Detailed Scan
+   ./printseek.py -t 3 -v -c private
+
+SNMP INFORMATION EXTRACTED
+═══════════════════════════
+  ✓ Printer name            ✓ Model/description
+  ✓ Serial number           ✓ Location
+  ✓ Contact info            ✓ Page count
+  ✓ System uptime           ✓ Device description
+
+COMMON SNMP COMMUNITIES
+═══════════════════════
+  public      - Default read-only (most common)
+  private     - Often read-write access
+  admin       - Administrative access
+  community   - Generic community name
+  <company>   - Company name
+  0 or 1      - Simple numeric
+
+PERFORMANCE TUNING
+══════════════════
+  Fast:      ./printseek.py -w 50 -t 0.5
+  Balanced:  ./printseek.py -w 10 -t 1.0  (default)
+  Thorough:  ./printseek.py -w 5 -t 3.0
+
+TROUBLESHOOTING
+═══════════════
+  No printers found?
+    → Try verbose: -v
+    → Increase timeout: -t 3
+    → Verify network: ping <ip>
+  
+  snmpget not found?
+    → sudo apt install snmp
+  
+  No SNMP data?
+    → Try -c private or -c admin
+    → SNMP may be disabled on printer
+  
+  Permission denied?
+    → chmod +x printseek.py
+
+INTEGRATION
+═══════════
+  Nmap:           nmap -sV -p 9100,161,631 -iL printerlist.txt
+  PRET:           pret.py <ip> pjl
+  Manual SNMP:    snmpwalk -v2c -c public <ip>
+  JSON parsing:   cat printer_details.json | jq
+
+USEFUL JSON QUERIES
+═══════════════════
+  List all IPs:
+    jq -r '.[].ip' printer_details.json
+  
+  List models:
+    jq -r '.[].snmp_info.model' printer_details.json | sort -u
+  
+  Find by location:
+    jq -r '.[] | "\(.snmp_info.location) - \(.ip)"' printer_details.json
+  
+  High page count:
+    jq '.[] | select(.snmp_info.page_count > "100000")' printer_details.json
+
+ATTACK SURFACE (AUTHORIZED TESTING)
+════════════════════════════════════
+  ✓ Default web credentials (admin/admin, etc.)
+  ✓ SNMP write access (community: private)
+  ✓ PostScript injection (port 9100)
+  ✓ Stored documents in memory
+  ✓ FTP access (port 21)
+  ✓ Firmware vulnerabilities
+  ✓ Information disclosure
+
+TIPS
+════
+  • Try multiple SNMP community strings
+  • High page counts indicate important printers
+  • Location field may reveal floor plans
+  • Serial numbers useful for CVE lookups
+  • Web interfaces often have default creds
+  • Check for stored print jobs
+
+RELATED TOOLS
+═════════════
+  PRET        - Printer Exploitation Toolkit
+  Praeda      - Automated printer data harvesting
+  Metasploit  - Printer exploit modules
+  snmpwalk    - Manual SNMP enumeration
+
+SNMP OID QUICK REFERENCE
+════════════════════════
+  1.3.6.1.2.1.1.5.0           sysName (Printer name)
+  1.3.6.1.2.1.25.3.2.1.3.1    hrDeviceDescr (Model)
+  1.3.6.1.2.1.43.5.1.1.17.1   Serial number
+  1.3.6.1.2.1.1.6.0           sysLocation
+  1.3.6.1.2.1.43.10.2.1.4.1.1 Page count
+
+SECURITY NOTE
+═════════════
+  ⚠ Authorized testing only
+  ⚠ May trigger IDS/IPS alerts
+  ⚠ SNMP queries are often logged
+  ⚠ Store results securely
+
+═══════════════════════════════════════════════════════════════════════════════
+Version: 1.0 | For Kali Linux | Tested: October 2025
+═══════════════════════════════════════════════════════════════════════════════
