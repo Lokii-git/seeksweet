@@ -33,6 +33,7 @@ import sys
 import json
 import re
 import os
+import ipaddress
 
 # Import shared utilities
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -157,7 +158,7 @@ def print_banner():
 
 
 def read_ip_list(file_path):
-    """Read IP addresses from a file"""
+    """Read IP addresses from a file. Supports CIDR notation."""
     # Use shared utility to find the file
     file_path = find_ip_list(file_path)
     
@@ -169,7 +170,18 @@ def read_ip_list(file_path):
                 if line and not line.startswith('#'):
                     # Extract just the IP if line contains more info
                     ip = line.split()[0]
-                    ips.append(ip)
+                    
+                    # Check if it's CIDR notation
+                    if '/' in ip:
+                        try:
+                            network = ipaddress.ip_network(ip, strict=False)
+                            for host_ip in network.hosts():
+                                ips.append(str(host_ip))
+                        except ValueError:
+                            # Not valid CIDR, treat as single IP
+                            ips.append(ip)
+                    else:
+                        ips.append(ip)
     except Exception as e:
         print(f"{RED}[!] Error reading file {file_path}: {e}{RESET}")
     return ips

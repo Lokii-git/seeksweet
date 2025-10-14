@@ -34,6 +34,7 @@ import json
 import re
 import argparse
 import base64
+import ipaddress
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -90,17 +91,27 @@ def print_banner():
 
 
 def read_user_list(file_path):
-    """Read usernames from a file"""
-    users = []
+    """Read usernames or IPs from a file. Supports CIDR notation for IP addresses."""
+    items = []
     try:
         with open(file_path, 'r') as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    users.append(line)
+                    # Check if it's CIDR notation (for DC IP lists)
+                    if '/' in line and '.' in line:
+                        try:
+                            network = ipaddress.ip_network(line, strict=False)
+                            for ip in network.hosts():
+                                items.append(str(ip))
+                        except ValueError:
+                            # Not valid CIDR, treat as regular item
+                            items.append(line)
+                    else:
+                        items.append(line)
     except Exception as e:
         print(f"{RED}[!] Error reading file {file_path}: {e}{RESET}")
-    return users
+    return items
 
 
 def check_kerberos_port(dc_ip, port=88, timeout=3):
