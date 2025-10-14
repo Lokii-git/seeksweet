@@ -52,9 +52,15 @@ SeekSweet is an orchestrated collection of 14 specialized penetration testing to
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/seeksweet.git
+# Clone the repository
+git clone https://github.com/Lokii-git/seeksweet.git
 cd seeksweet
-pip install -r requirements.txt  # If dependencies needed
+
+# Install Python dependencies (required for web/HTTP tools)
+pip install -r requirements.txt
+
+# Install system tools (Linux/Kali - highly recommended)
+sudo apt-get install enum4linux ldap-utils smbclient nmap snmp impacket-scripts
 ```
 
 ### Basic Usage
@@ -182,18 +188,30 @@ Each tool includes comprehensive documentation:
 
 ## 🐛 Dependencies
 
-### Core Requirements
-- Python 3.8+
-- Standard library only (no pip packages for basic functionality)
+### Required Python Packages
+```bash
+pip install -r requirements.txt
+```
+- **requests** - HTTP/HTTPS requests (WebSeek, WinRMSeek, BackupSeek)
+- **urllib3** - URL handling (WebSeek, WinRMSeek, BackupSeek, PanelSeek)
 
-### Optional External Tools (for enhanced features)
-- `enum4linux` - For DCSeek enumeration
-- `ldapsearch` - For LDAPSeek queries
-- `smbclient` - For SMBSeek share access testing
-- `nmap` - For VulnSeek NSE scripts
-- `snmpwalk` - For SNMPSeek enumeration
+### Optional Python Packages (Database Support)
+Uncomment in `requirements.txt` as needed:
+- **PyMySQL** - MySQL/MariaDB enumeration
+- **psycopg2** - PostgreSQL enumeration
+- **pymssql** - Microsoft SQL Server enumeration
+- **pymongo** - MongoDB enumeration
+- **redis** - Redis enumeration
 
-Most tools work without external dependencies for basic discovery.
+### Required External Tools (Install via apt/brew/choco)
+- **enum4linux** - DCSeek enumeration
+- **ldapsearch** - LDAPSeek queries (ldap-utils package)
+- **smbclient** - SMBSeek/ShareSeek share testing
+- **nmap** - VulnSeek NSE scripts
+- **snmpwalk** - SNMPSeek enumeration (snmp package)
+- **impacket** - KerbSeek attacks (GetUserSPNs.py, GetNPUsers.py)
+
+See `requirements.txt` for complete installation instructions per OS.
 
 ## ⚠️ Legal Disclaimer
 
