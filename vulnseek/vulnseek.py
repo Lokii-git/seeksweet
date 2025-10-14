@@ -87,6 +87,7 @@ def print_banner():
 {Colors.FAIL}╔═══════════════════════════════════════════════════════════╗
 ║                   VulnSeek v1.0                           ║
 ║          Vulnerability Scanner for Internal Networks      ║
+║              github.com/Lokii-git/seeksweet               ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.ENDC}
 """
     print(banner)

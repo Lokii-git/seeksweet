@@ -59,6 +59,7 @@ def print_banner():
 {Colors.OKCYAN}╔═══════════════════════════════════════════════════════════╗
 ║                   SMBSeek v1.0                            ║
 ║            SMB Share Discovery & Enumeration              ║
+║              github.com/Lokii-git/seeksweet               ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.ENDC}
 """
     print(banner)

@@ -115,6 +115,7 @@ BANNER = f"""{CYAN}{BOLD}
 {RESET}
 {YELLOW}LDAPSeek v1.0 - Active Directory LDAP Enumeration{RESET}
 {BLUE}Deep reconnaissance of AD environments{RESET}
+{GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
 
 

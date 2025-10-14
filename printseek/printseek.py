@@ -387,6 +387,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════╗
 ║                     PrintSeek v1.0                       ║
 ║              Network Printer Discovery Tool              ║
+║              github.com/Lokii-git/seeksweet              ║
 ╚══════════════════════════════════════════════════════════╝
 """
     print(banner)

@@ -225,32 +225,13 @@ SEEK_TOOLS = [
 def print_banner():
     """Print the SeekSweet banner"""
     banner = f"""{CYAN}{BOLD}
-    ╔═══════════════════════════════════════════════════════════════════╗
-    ║                                                                   ║
-    ║   ███████╗███████╗███████╗██╗  ██╗███████╗██╗    ██╗███████╗    ║
-    ║   ██╔════╝██╔════╝██╔════╝██║ ██╔╝██╔════╝██║    ██║██╔════╝    ║
-    ║   ███████╗█████╗  █████╗  █████╔╝ ███████╗██║ █╗ ██║█████╗      ║
-    ║   ╚════██║██╔══╝  ██╔══╝  ██╔═██╗ ╚════██║██║███╗██║██╔══╝      ║
-    ║   ███████║███████╗███████╗██║  ██╗███████║╚███╔███╔╝███████╗    ║
-    ║   ╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝ ╚══════╝    ║
-    ║                                                                   ║
-    ║              A Sweet Suite of Seek Tools v1.0                    ║
-    ║          Orchestrated Network Reconnaissance Framework           ║
-    ║                                                                   ║
-    ╚═══════════════════════════════════════════════════════════════════╝
-    {RESET}"""
-    
-    # Try to print with Unicode, fall back to ASCII if encoding issues
-    try:
-        print(banner)
-    except UnicodeEncodeError:
-        ascii_banner = f"""{CYAN}{BOLD}
     ========================================================================
-              SEEKSWEET - A Sweet Suite of Seek Tools v1.0
-            Orchestrated Network Reconnaissance Framework
+                    SEEKSWEET v1.0 - Seek Tools Suite
+              Orchestrated Network Reconnaissance Framework
+                   github.com/Lokii-git/seeksweet
     ========================================================================
     {RESET}"""
-        print(ascii_banner)
+    print(banner)
 
 
 def get_priority_color(priority):

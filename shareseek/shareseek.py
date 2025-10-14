@@ -61,6 +61,7 @@ def print_banner():
 {Colors.OKCYAN}╔═══════════════════════════════════════════════════════════╗
 ║                   ShareSeek v1.0                          ║
 ║             Network Share Discovery Tool                  ║
+║              github.com/Lokii-git/seeksweet               ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.ENDC}
 """
     print(banner)

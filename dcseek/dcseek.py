@@ -459,6 +459,7 @@ def print_banner():
                     DCSeek v1.1
           Domain Controller Discovery Tool
             with Enum4linux Integration
+               github.com/Lokii-git/seeksweet
 ================================================================
 """
     print(banner)

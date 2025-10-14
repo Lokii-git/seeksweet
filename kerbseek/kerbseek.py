@@ -80,6 +80,7 @@ BANNER = f"""{CYAN}{BOLD}
 {RESET}
 {YELLOW}KerbSeek v1.0 - Kerberos Attack Discovery{RESET}
 {BLUE}Automated Kerberoasting and ASREPRoasting{RESET}
+{GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
 
 

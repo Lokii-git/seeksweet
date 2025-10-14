@@ -109,6 +109,7 @@ def print_banner():
 {Colors.OKCYAN}╔═══════════════════════════════════════════════════════════╗
 ║                   DbSeek v1.0                             ║
 ║            Database Server Discovery Tool                 ║
+║              github.com/Lokii-git/seeksweet               ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.ENDC}
 """
     print(banner)

@@ -116,6 +116,7 @@ BANNER = f"""{CYAN}{BOLD}
 {RESET}
 {YELLOW}SNMPSeek v1.0 - Enhanced SNMP Enumeration{RESET}
 {BLUE}Comprehensive SNMP scanning and exploitation{RESET}
+{GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
 
 

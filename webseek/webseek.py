@@ -139,6 +139,7 @@ BANNER = f"""{CYAN}{BOLD}
 {RESET}
 {YELLOW}WebSeek v1.0 - Web Vulnerability Scanner{RESET}
 {BLUE}Discover common web security issues{RESET}
+{GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
 
 

@@ -70,6 +70,7 @@ BANNER = f"""{CYAN}{BOLD}
 {RESET}
 {YELLOW}WinRMSeek v1.0 - Windows Remote Management Discovery{RESET}
 {BLUE}Find and enumerate WinRM/PSRemoting hosts{RESET}
+{GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
 
 

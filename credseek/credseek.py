@@ -147,6 +147,7 @@ BANNER = f"""{CYAN}{BOLD}
 {RESET}
 {YELLOW}CredSeek v1.0 - Credential Harvesting Tool{RESET}
 {BLUE}Searches for credentials in files, shares, and configurations{RESET}
+{GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
 
 

@@ -501,6 +501,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════╗
 ║                     PanelSeek v1.0                       ║
 ║            Exposed Admin Panel Discovery Tool            ║
+║              github.com/Lokii-git/seeksweet              ║
 ╚══════════════════════════════════════════════════════════╝
 """
     print(banner)
