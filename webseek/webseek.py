@@ -36,6 +36,7 @@ import json
 import re
 import argparse
 import requests
+import ipaddress
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from urllib.parse import urljoin
@@ -149,7 +150,7 @@ def print_banner():
 
 
 def read_ip_list(file_path):
-    """Read IP addresses or URLs from a file"""
+    """Read IP addresses or URLs from a file. Supports CIDR notation."""
     # Use shared utility to find the file
     file_path = find_ip_list(file_path)
     
@@ -159,7 +160,17 @@ def read_ip_list(file_path):
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    targets.append(line)
+                    # Check if it's CIDR notation
+                    if '/' in line and not line.startswith('http'):
+                        try:
+                            network = ipaddress.ip_network(line, strict=False)
+                            for ip in network.hosts():
+                                targets.append(str(ip))
+                        except ValueError:
+                            # Not valid CIDR, treat as URL
+                            targets.append(line)
+                    else:
+                        targets.append(line)
     except Exception as e:
         print(f"{RED}[!] Error reading file {file_path}: {e}{RESET}")
     return targets
