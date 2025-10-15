@@ -19,6 +19,10 @@ BLUE = '\033[94m'
 MAGENTA = '\033[95m'
 CYAN = '\033[96m'
 WHITE = '\033[97m'
+ORANGE = '\033[38;5;208m'       # Bright orange for [NEW!]
+BRIGHT_CYAN = '\033[38;5;51m'   # Brighter cyan for Access phase
+PURPLE = '\033[38;5;141m'       # Purple for Assessment phase
+LIGHT_BLUE = '\033[38;5;117m'   # Light blue for Web phase
 BOLD = '\033[1m'
 RESET = '\033[0m'
 
@@ -83,12 +87,12 @@ SEEK_TOOLS = [
         'script': 'ldapseek/ldapseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Enumerate AD via LDAP + LAPS + Delegation + Password Policy',
+        'description': 'Enumerate AD users, admins, LAPS passwords, delegation trusts, and password policies',
         'why': 'Essential for users, LAPS passwords, delegation, weak policies',
         'outputs': ['ldaplist.txt', 'users.txt', 'laps_readable.txt', 'delegation_targets.txt', 'password_policy.txt', 'LAPS_ATTACK_GUIDE.txt', 'DELEGATION_ATTACK_GUIDE.txt', 'USERS_ATTACK_GUIDE.txt'],
         'typical_args': 'iplist.txt --full -v',
         'optional_creds': True,
-        'new_features': 'LAPS detection, enhanced delegation (unconstrained/constrained/RBCD), password policy extraction'
+        'new_features': 'LAPS detection, enhanced delegation, password policy'
     },
     {
         'id': 3,
@@ -132,11 +136,11 @@ SEEK_TOOLS = [
         'script': 'credseek/credseek.py',
         'priority': 'HIGH',
         'phase': 'Authentication',
-        'description': 'Find credential stores, password vaults, and GPP passwords [ENHANCED!]',
+        'description': 'Find credential stores, password vaults, and GPP passwords',
         'why': 'Locate stored credentials, password managers, and exploit MS14-025 GPP vulnerability',
         'outputs': ['credlist.txt', 'cred_details.txt', 'cred_details.json', 'GPP_ATTACK_GUIDE.txt'],
         'typical_args': 'iplist.txt --deep -v (or --gpp dclist.txt for GPP extraction)',
-        'new_features': 'GPP password extraction with comprehensive exploitation guide including manual decryption, automated tools, and post-exploitation strategies'
+        'new_features': 'GPP password extraction with comprehensive attack guide'
     },
     {
         'id': 7,
@@ -144,11 +148,11 @@ SEEK_TOOLS = [
         'script': 'winrmseek/winrmseek.py',
         'priority': 'MEDIUM',
         'phase': 'Access',
-        'description': 'Find WinRM endpoints and test connections [ENHANCED!]',
+        'description': 'Find WinRM endpoints, validate credentials, and test remote command execution',
         'why': 'Identify remote administration access points with connection validation',
         'outputs': ['winrmlist.txt', 'winrm_access.txt', 'winrm_details.txt', 'winrm_details.json', 'WINRM_ATTACK_GUIDE.txt'],
         'typical_args': 'iplist.txt -t -u user -p pass -v',
-        'new_features': 'Real connection testing with command execution (whoami, hostname, systeminfo), enhanced access list with connection commands, comprehensive WinRM exploitation guide',
+        'new_features': 'Real connection testing + command execution + attack guide',
         'optional_creds': True
     },
     {
@@ -191,20 +195,20 @@ SEEK_TOOLS = [
         'script': 'backupseek/backupseek.py',
         'priority': 'MEDIUM',
         'phase': 'Services',
-        'description': 'Find backup systems and NAS infrastructure [ENHANCED!]',
+        'description': 'Find backup systems and NAS infrastructure',
         'why': 'Locate backup servers and NAS devices - often contain full system images and backups',
         'outputs': ['backuplist.txt', 'backup_details.txt', 'backup_details.json'],
         'typical_args': 'iplist.txt -v',
-        'new_features': 'NAS detection (Synology, QNAP, TrueNAS, Netgear, Buffalo) with web interface enumeration'
+        'new_features': 'NAS detection (Synology, QNAP, TrueNAS, Netgear, Buffalo)'
     },
     {
         'id': 12,
         'name': 'PrintSeek',
         'script': 'printseek/printseek.py',
-        'priority': 'LOW',
+        'priority': 'MEDIUM',
         'phase': 'Services',
-        'description': 'Find print servers and enumerate printers',
-        'why': 'Identify print infrastructure - useful for network mapping',
+        'description': 'Find print servers and enumerate printers - Remember: Check address books for user enumeration and test default admin passwords',
+        'why': 'Printer address books contain user lists, and default admin credentials are a common medium finding',
         'outputs': ['printerlist.txt', 'printer_details.txt'],
         'typical_args': 'iplist.txt -v'
     },
@@ -225,7 +229,7 @@ SEEK_TOOLS = [
         'script': 'vulnseek/vulnseek.py',
         'priority': 'HIGH',
         'phase': 'Assessment',
-        'description': 'Multi-method vuln scanner (Nmap/Nuclei/Metasploit)',
+        'description': 'Scan for critical CVEs: EternalBlue, BlueKeep, SMBGhost, Zerologon, and 100+ more',
         'why': 'Final assessment - comprehensive CVE detection with 10+ nmap checks and Nuclei CVE templates',
         'outputs': ['CRITICAL_VULNS.txt', 'vulnlist.txt', 'vuln_details.json', 'nuclei_cve_results/'],
         'typical_args': '-f iplist.txt --full --nuclei -v'
@@ -236,12 +240,12 @@ SEEK_TOOLS = [
         'script': 'bloodseek/bloodseek.py',
         'priority': 'CRITICAL',
         'phase': 'Assessment',
-        'description': 'BloodHound collection wrapper with comprehensive AD attack guide [NEW!]',
+        'description': 'Collect AD data with BloodHound to find paths to Domain Admin and identify privilege escalation routes',
         'why': 'Essential for Active Directory attack path analysis and privilege escalation mapping',
         'outputs': ['bloodlist.txt', 'BLOODHOUND_GUIDE.txt', '*.json (BloodHound data)'],
         'typical_args': '-d DOMAIN.LOCAL -u user -p password -dc 10.10.10.10 --method All',
         'needs_creds': True,
-        'new_features': 'Complete BloodHound wrapper with 11 collection methods, Neo4j setup guide, custom Cypher queries, edge exploitation guide'
+        'new_features': 'BloodHound wrapper with 11 collection methods + attack guide'
     },
     {
         'id': 16,
@@ -249,11 +253,11 @@ SEEK_TOOLS = [
         'script': 'sslseek/sslseek.py',
         'priority': 'HIGH',
         'phase': 'Services',
-        'description': 'SSL/TLS security scanner wrapper with comprehensive vulnerability guide [NEW!]',
+        'description': 'SSL/TLS security scanner wrapper with comprehensive vulnerability guide',
         'why': 'Identify SSL/TLS misconfigurations, weak ciphers, and critical vulnerabilities (Heartbleed, POODLE, etc.)',
         'outputs': ['ssllist.txt', 'SSL_ATTACK_GUIDE.txt', 'testssl_*.json'],
         'typical_args': 'target.com --full',
-        'new_features': 'testssl.sh wrapper covering 10+ critical vulnerabilities, cipher analysis, certificate validation, and exploitation strategies'
+        'new_features': 'testssl.sh wrapper with 10+ CVE checks + attack guide'
     }
 ]
 
@@ -286,10 +290,10 @@ def get_phase_color(phase):
     colors = {
         'Discovery': MAGENTA,
         'Authentication': CYAN,
-        'Access': YELLOW,
-        'Web': BLUE,
+        'Access': BRIGHT_CYAN,
+        'Web': LIGHT_BLUE,
         'Services': GREEN,
-        'Assessment': RED
+        'Assessment': PURPLE
     }
     return colors.get(phase, WHITE)
 
@@ -308,6 +312,34 @@ def pad_with_ansi(text, width):
     return text + (' ' * padding_needed) if padding_needed > 0 else text
 
 
+def wrap_text(text, width, indent="      "):
+    """Wrap text to fit within specified width, preserving indent"""
+    words = text.split()
+    lines = []
+    current_line = []
+    current_length = 0
+    
+    for word in words:
+        # Account for space between words
+        word_length = len(word) + (1 if current_line else 0)
+        
+        if current_length + word_length <= width:
+            current_line.append(word)
+            current_length += word_length
+        else:
+            # Finish current line and start new one
+            if current_line:
+                lines.append(indent + ' '.join(current_line))
+            current_line = [word]
+            current_length = len(word)
+    
+    # Add remaining words
+    if current_line:
+        lines.append(indent + ' '.join(current_line))
+    
+    return lines
+
+
 def format_tool_lines(tool, show_details):
     """Format a tool's display lines"""
     lines = []
@@ -315,23 +347,69 @@ def format_tool_lines(tool, show_details):
     priority_color = get_priority_color(tool['priority'])
     
     # NEW indicator for enhanced tools
-    new_indicator = f" {MAGENTA}[NEW!]{RESET}" if tool.get('new_features') else ""
+    new_indicator = f" {ORANGE}[NEW!]{RESET}" if tool.get('new_features') else ""
+    
+    # Credential indicator
+    cred_indicator = " 🔑" if tool.get('needs_creds') or tool.get('optional_creds') else ""
     
     # Main line
-    lines.append(f"  {BOLD}{tool['id']:2d}.{RESET} {BOLD}{tool['name']}{RESET} {priority_color}[{tool['priority']}]{RESET}{new_indicator}{status}")
-    lines.append(f"      {tool['description'][:65]}")
+    lines.append(f"  {BOLD}{tool['id']:2d}.{RESET} {BOLD}{tool['name']}{cred_indicator}{RESET} {priority_color}[{tool['priority']}]{RESET}{new_indicator}{status}")
     
-    # Show new features if present
+    # Description - wrap if longer than 52 chars (column width)
+    desc = tool['description']
+    if len(desc) <= 52:
+        lines.append(f"      {desc}")
+    else:
+        wrapped = wrap_text(desc, 52, "      ")
+        lines.extend(wrapped)
+    
+    # New features - wrap if longer than 50 chars (leaving room for "✨ NEW: ")
     if tool.get('new_features'):
-        lines.append(f"      {MAGENTA}✨ NEW:{RESET} {tool['new_features'][:60]}")
+        new_feat = tool['new_features']
+        if len(new_feat) <= 44:  # 52 - 8 for "✨ NEW: "
+            lines.append(f"      {ORANGE}✨ NEW:{RESET} {new_feat}")
+        else:
+            # First line with label
+            words = new_feat.split()
+            first_line = []
+            first_length = 0
+            remaining_words = []
+            
+            for i, word in enumerate(words):
+                word_length = len(word) + (1 if first_line else 0)
+                if first_length + word_length <= 44:
+                    first_line.append(word)
+                    first_length += word_length
+                else:
+                    remaining_words = words[i:]
+                    break
+            
+            lines.append(f"      {ORANGE}✨ NEW:{RESET} {' '.join(first_line)}")
+            
+            # Remaining lines (indented further)
+            if remaining_words:
+                wrapped = wrap_text(' '.join(remaining_words), 46, "             ")
+                lines.extend(wrapped)
     
     # Optional details
     if show_details:
-        lines.append(f"      {YELLOW}Why:{RESET} {tool['why'][:60]}")
+        why = tool['why']
+        if len(why) <= 46:  # 52 - 6 for "Why: "
+            lines.append(f"      {YELLOW}Why:{RESET} {why}")
+        else:
+            wrapped = wrap_text(why, 46, "           ")
+            lines.append(f"      {YELLOW}Why:{RESET} {wrapped[0][11:]}")  # First line with label
+            lines.extend(wrapped[1:])  # Remaining lines
     
     # Output location if completed
     if tool['id'] in completed_scans and tool['id'] in scan_outputs:
-        lines.append(f"      {GREEN}Output:{RESET} {scan_outputs[tool['id']][:55]}")
+        output = scan_outputs[tool['id']]
+        if len(output) <= 45:  # 52 - 7 for "Output: "
+            lines.append(f"      {GREEN}Output:{RESET} {output}")
+        else:
+            wrapped = wrap_text(output, 45, "             ")
+            lines.append(f"      {GREEN}Output:{RESET} {wrapped[0][13:]}")
+            lines.extend(wrapped[1:])
     
     return lines
 
@@ -342,9 +420,12 @@ def print_menu(show_details=False):
     print(f"{BOLD}{CYAN}SEEKSWEET MENU - Select a Tool to Run{RESET}")
     print(f"{BOLD}{'='*120}{RESET}")
     
+    # Legend
+    print(f"{CYAN}Legend:{RESET} 🔑 = Supports/requires credentials for enhanced enumeration  |  {ORANGE}[NEW!]{RESET} = Recently enhanced with new features\n")
+    
     # Highlight new features
-    print(f"{MAGENTA}{BOLD}✨ NEW FEATURES ADDED:{RESET} SMB Relay Detection, LAPS Enumeration, Enhanced Delegation, Password Policy, Kerberos Cracking Guide")
-    print(f"{MAGENTA}   Tools enhanced: DCSeek, SMBSeek, LDAPSeek, KerbSeek - Look for {MAGENTA}[NEW!]{RESET} tags below\n")
+    print(f"{ORANGE}{BOLD}✨ NEW FEATURES ADDED:{RESET} SMB Relay Detection, LAPS Enumeration, Enhanced Delegation, Password Policy, Kerberos Cracking Guide")
+    print(f"{ORANGE}   Tools enhanced: DCSeek, SMBSeek, LDAPSeek, KerbSeek{RESET}\n")
     
     # Group by phase
     phases = {}
