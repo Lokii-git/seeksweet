@@ -214,10 +214,10 @@ SEEK_TOOLS = [
         'script': 'vulnseek/vulnseek.py',
         'priority': 'HIGH',
         'phase': 'Assessment',
-        'description': 'Scan for known vulnerabilities and misconfigurations',
-        'why': 'Final assessment - check for exploitable vulnerabilities',
-        'outputs': ['vulnlist.txt', 'vuln_details.txt'],
-        'typical_args': 'iplist.txt -v'
+        'description': 'Multi-method vulnerability scanner (Nmap + Nuclei CVEs + Metasploit detection)',
+        'why': 'Final assessment - comprehensive CVE detection with 10+ nmap checks and Nuclei CVE templates',
+        'outputs': ['CRITICAL_VULNS.txt', 'vulnlist.txt', 'vuln_details.json', 'nuclei_cve_results/'],
+        'typical_args': '-f iplist.txt --full --nuclei -v'
     }
 ]
 
@@ -400,8 +400,11 @@ def run_seek_tool(tool, target_file=None):
     cmd = [sys.executable, str(script_path)]
     
     # Tools that use -f flag
-    if tool['name'] in ['DCSeek', 'PrintSeek', 'ShareSeek', 'PanelSeek', 'DbSeek', 'SMBSeek', 'VulnSeek']:
+    if tool['name'] in ['DCSeek', 'PrintSeek', 'ShareSeek', 'PanelSeek', 'DbSeek', 'SMBSeek']:
         cmd.extend(['-f', target_file, '-v'])
+    elif tool['name'] == 'VulnSeek':
+        # VulnSeek v2 with full scan and Nuclei CVE scanning
+        cmd.extend(['-f', target_file, '--full', '--nuclei', '-v'])
     else:
         # Tools that use positional argument
         cmd.extend([target_file, '-v'])

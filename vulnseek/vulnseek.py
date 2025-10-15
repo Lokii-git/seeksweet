@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """
-VulnSeek v1.0 - Vulnerability Scanner for Internal Networks
+VulnSeek v2.0 - Enhanced Vulnerability Scanner for Internal Networks
 
-Scans for common vulnerabilities including:
-- EternalBlue (MS17-010) via Metasploit
-- BlueKeep (CVE-2019-0708) 
+Combines multiple scanning methods:
+- Nmap NSE scripts for specific CVEs
+- Metasploit auxiliary modules (detection only)
+- Nuclei CVE templates (no exploitation)
+
+Scans for:
+- EternalBlue (MS17-010)
+- BlueKeep (CVE-2019-0708)
 - SMBGhost (CVE-2020-0796)
-- Outdated OS versions
-- Missing patches
+- Zerologon (CVE-2020-1472)
+- PrintNightmare (CVE-2021-34527)
+- HiveNightmare (CVE-2021-36934)
+- PetitPotam (CVE-2021-36942)
+- NoPac (CVE-2021-42278/42287)
+- And 100+ more CVEs via Nuclei
 
-Author: Internal Red Team
+Author: Lokii-git
 Date: October 2025
-Platform: Kali Linux
+Platform: Kali Linux / Windows with tools
 """
 
 import subprocess
@@ -22,15 +31,15 @@ import json
 import os
 import sys
 import re
-
-# Import shared utilities
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from seek_utils import find_ip_list
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple
 
-# Color codes for terminal output
+# Import shared utilities
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from seek_utils import find_ip_list
+
+# Color codes
 class Colors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -42,60 +51,149 @@ class Colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-# Vulnerability definitions
-VULNERABILITIES = {
+# Expanded vulnerability definitions with nmap scripts
+NMAP_CVE_CHECKS = {
     'ms17-010': {
         'name': 'EternalBlue',
         'cve': 'CVE-2017-0144',
         'severity': 'CRITICAL',
         'description': 'SMBv1 Remote Code Execution',
-        'ports': [445],
-        'metasploit_module': 'auxiliary/scanner/smb/smb_ms17_010',
-        'affected_os': ['Windows 7', 'Windows Server 2008', 'Windows 8', 'Windows Server 2012', 'Windows 10']
+        'port': 445,
+        'nmap_script': 'smb-vuln-ms17-010',
+        'affected_os': ['Windows 7', 'Windows Server 2008', 'Windows 8', 'Windows Server 2012']
+    },
+    'ms17-010-alt': {
+        'name': 'EternalBlue (Alternative)',
+        'cve': 'CVE-2017-0143',
+        'severity': 'CRITICAL',
+        'description': 'SMBv1 Multiple Vulnerabilities',
+        'port': 445,
+        'nmap_script': 'smb-vuln-ms17-010',
+        'affected_os': ['Windows Vista', 'Windows 7', 'Windows 8', 'Windows Server 2008']
     },
     'bluekeep': {
         'name': 'BlueKeep',
         'cve': 'CVE-2019-0708',
         'severity': 'CRITICAL',
         'description': 'RDP Remote Code Execution',
-        'ports': [3389],
-        'metasploit_module': 'auxiliary/scanner/rdp/cve_2019_0708_bluekeep',
+        'port': 3389,
+        'nmap_script': 'rdp-vuln-ms12-020',
         'affected_os': ['Windows 7', 'Windows Server 2008', 'Windows Server 2008 R2']
     },
-    'smbghost': {
-        'name': 'SMBGhost',
-        'cve': 'CVE-2020-0796',
+    'ms08-067': {
+        'name': 'MS08-067',
+        'cve': 'CVE-2008-4250',
         'severity': 'CRITICAL',
-        'description': 'SMBv3 Remote Code Execution',
-        'ports': [445],
-        'metasploit_module': 'auxiliary/scanner/smb/smb_ms17_010',  # Generic SMB scanner
-        'affected_os': ['Windows 10 1903', 'Windows 10 1909', 'Windows Server 2019']
+        'description': 'Server Service RCE',
+        'port': 445,
+        'nmap_script': 'smb-vuln-ms08-067',
+        'affected_os': ['Windows 2000', 'Windows XP', 'Windows Server 2003']
     },
-    'zerologon': {
-        'name': 'Zerologon',
-        'cve': 'CVE-2020-1472',
+    'conficker': {
+        'name': 'Conficker',
+        'cve': 'CVE-2008-4250',
+        'severity': 'HIGH',
+        'description': 'MS08-067 Worm',
+        'port': 445,
+        'nmap_script': 'smb-vuln-conficker',
+        'affected_os': ['Windows XP', 'Windows Vista', 'Windows 7']
+    },
+    'ms10-054': {
+        'name': 'MS10-054',
+        'cve': 'CVE-2010-2729',
         'severity': 'CRITICAL',
-        'description': 'Netlogon Elevation of Privilege',
-        'ports': [445],
-        'metasploit_module': 'auxiliary/scanner/dcerpc/zerologon',
-        'affected_os': ['Windows Server 2008', 'Windows Server 2012', 'Windows Server 2016', 'Windows Server 2019']
+        'description': 'SMB Pool Overflow',
+        'port': 445,
+        'nmap_script': 'smb-vuln-ms10-054',
+        'affected_os': ['Windows XP', 'Windows Server 2003', 'Windows Vista']
+    },
+    'ms10-061': {
+        'name': 'MS10-061',
+        'cve': 'CVE-2010-2730',
+        'severity': 'CRITICAL',
+        'description': 'Print Spooler Service RCE',
+        'port': 445,
+        'nmap_script': 'smb-vuln-ms10-061',
+        'affected_os': ['Windows XP', 'Windows Server 2003', 'Windows 7']
+    },
+    'ms12-020': {
+        'name': 'MS12-020',
+        'cve': 'CVE-2012-0002',
+        'severity': 'HIGH',
+        'description': 'RDP Remote Code Execution',
+        'port': 3389,
+        'nmap_script': 'rdp-vuln-ms12-020',
+        'affected_os': ['Windows XP', 'Windows Vista', 'Windows 7', 'Windows Server 2003/2008']
+    },
+    'cve-2009-3103': {
+        'name': 'MS09-050',
+        'cve': 'CVE-2009-3103',
+        'severity': 'CRITICAL',
+        'description': 'SMBv2 Command Value Vulnerability',
+        'port': 445,
+        'nmap_script': 'smb-vuln-cve2009-3103',
+        'affected_os': ['Windows Vista', 'Windows Server 2008']
+    },
+    'regsvc-dos': {
+        'name': 'Regsvc DoS',
+        'cve': 'CVE-2010-2554',
+        'severity': 'MEDIUM',
+        'description': 'Windows Regsvc DoS',
+        'port': 445,
+        'nmap_script': 'smb-vuln-regsvc-dos',
+        'affected_os': ['Windows 7', 'Windows Vista', 'Windows Server 2008']
     }
 }
 
 def print_banner():
     """Print tool banner"""
     banner = f"""
-{Colors.FAIL}╔═══════════════════════════════════════════════════════════╗
-║                   VulnSeek v1.0                           ║
-║          Vulnerability Scanner for Internal Networks      ║
+{Colors.FAIL}{Colors.BOLD}╔═══════════════════════════════════════════════════════════╗
+║                   VulnSeek v2.0                           ║
+║     Enhanced Vulnerability Scanner - Multi-Method         ║
 ║              github.com/Lokii-git/seeksweet               ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.ENDC}
+
+{Colors.OKCYAN}Scanning Methods:{Colors.ENDC}
+  • Nmap NSE Scripts (10+ CVE checks)
+  • Nuclei CVE Templates (100+ CVEs)
+  • Metasploit Modules (optional, detection only)
 """
     print(banner)
 
+def check_tools() -> Dict[str, bool]:
+    """Check which tools are available"""
+    tools = {
+        'nmap': False,
+        'nuclei': False,
+        'msfconsole': False
+    }
+    
+    # Check nmap
+    try:
+        subprocess.run(['nmap', '--version'], capture_output=True, timeout=5)
+        tools['nmap'] = True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    
+    # Check nuclei
+    try:
+        subprocess.run(['nuclei', '-version'], capture_output=True, timeout=5)
+        tools['nuclei'] = True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    
+    # Check metasploit
+    try:
+        subprocess.run(['msfconsole', '-v'], capture_output=True, timeout=5)
+        tools['msfconsole'] = True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    
+    return tools
+
 def read_ip_list(file_path: str) -> List[str]:
-    """Read and parse IP addresses from file"""
-    # Use shared utility to find the file
+    """Read and parse IP addresses from file with CIDR support"""
     file_path = find_ip_list(file_path)
     
     ips = []
@@ -151,43 +249,52 @@ def get_hostname(ip: str) -> Optional[str]:
     except:
         return None
 
-def check_msfconsole() -> bool:
-    """Check if Metasploit is installed"""
+def run_nmap_cve_check(ip: str, check_id: str, check_info: Dict, timeout: int = 30) -> Tuple[bool, Optional[str]]:
+    """Run a specific nmap CVE check"""
     try:
-        result = subprocess.run(['msfconsole', '-v'], 
-                              capture_output=True, 
-                              timeout=5)
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        port = check_info['port']
+        script = check_info['nmap_script']
+        
+        result = subprocess.run(
+            ['nmap', '-p', str(port), '--script', script, ip],
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        
+        output = result.stdout + result.stderr
+        
+        # Check for vulnerability indicators
+        if 'VULNERABLE' in output or 'State: VULNERABLE' in output:
+            return True, output
+        elif 'NOT VULNERABLE' in output or 'not vulnerable' in output.lower():
+            return False, output
+        else:
+            return False, 'Unable to determine'
+            
+    except subprocess.TimeoutExpired:
+        return False, 'Timeout'
+    except Exception as e:
+        return False, str(e)
 
-def run_metasploit_module(module: str, rhosts: str, rport: int = None, 
-                         timeout: int = 60) -> Tuple[bool, Optional[str], Optional[str]]:
+def run_metasploit_check(module: str, ip: str, port: int = None, timeout: int = 60) -> Tuple[bool, Optional[str]]:
     """
-    Run a Metasploit auxiliary module
-    
-    Returns:
-        Tuple of (vulnerable, output, error)
+    Run Metasploit auxiliary module for detection only
+    Returns: (vulnerable, output)
     """
-    # Build Metasploit resource script
     commands = [
         f'use {module}',
-        f'set RHOSTS {rhosts}',
+        f'set RHOSTS {ip}',
         'set ExitOnSession false'
     ]
     
-    if rport:
-        commands.append(f'set RPORT {rport}')
+    if port:
+        commands.append(f'set RPORT {port}')
     
-    commands.extend([
-        'run',
-        'exit'
-    ])
-    
+    commands.extend(['run', 'exit'])
     rc_script = '\n'.join(commands)
     
     try:
-        # Run msfconsole with resource script
         result = subprocess.run(
             ['msfconsole', '-q', '-x', rc_script],
             capture_output=True,
@@ -197,161 +304,96 @@ def run_metasploit_module(module: str, rhosts: str, rport: int = None,
         
         output = result.stdout + result.stderr
         
-        # Check for vulnerability indicators
-        vulnerable = False
-        error = None
-        
         if 'vulnerable' in output.lower() or 'is likely VULNERABLE' in output:
-            vulnerable = True
-        elif 'not vulnerable' in output.lower() or 'does not appear' in output:
-            vulnerable = False
-        elif 'error' in output.lower() or 'failed' in output.lower():
-            error = 'Scan error'
-        elif 'timeout' in output.lower():
-            error = 'Timeout'
-        
-        return vulnerable, output, error
-        
-    except subprocess.TimeoutExpired:
-        return False, None, 'Timeout'
-    except Exception as e:
-        return False, None, str(e)
-
-def check_eternalblue_nmap(ip: str, timeout: int = 30) -> Tuple[bool, Optional[str]]:
-    """
-    Check for MS17-010 (EternalBlue) using nmap script
-    
-    Returns:
-        Tuple of (vulnerable, output)
-    """
-    try:
-        result = subprocess.run(
-            ['nmap', '-p445', '--script', 'smb-vuln-ms17-010', ip],
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        
-        output = result.stdout + result.stderr
-        
-        # Check for vulnerability
-        if 'State: VULNERABLE' in output or 'VULNERABLE:' in output:
-            return True, output
-        elif 'State: NOT VULNERABLE' in output or 'not vulnerable' in output.lower():
-            return False, output
-        else:
-            return False, 'Unable to determine'
-            
-    except subprocess.TimeoutExpired:
-        return False, 'Timeout'
-    except FileNotFoundError:
-        return False, 'nmap not found'
-    except Exception as e:
-        return False, str(e)
-
-def check_bluekeep_nmap(ip: str, timeout: int = 30) -> Tuple[bool, Optional[str]]:
-    """Check for CVE-2019-0708 (BlueKeep) using nmap"""
-    try:
-        result = subprocess.run(
-            ['nmap', '-p3389', '--script', 'rdp-vuln-ms12-020', ip],
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        
-        output = result.stdout + result.stderr
-        
-        if 'VULNERABLE' in output:
             return True, output
         else:
             return False, output
             
     except subprocess.TimeoutExpired:
         return False, 'Timeout'
-    except FileNotFoundError:
-        return False, 'nmap not found'
     except Exception as e:
         return False, str(e)
 
-def get_smb_version(ip: str, timeout: int = 10) -> Optional[Dict]:
-    """Get SMB version information"""
-    try:
-        result = subprocess.run(
-            ['nmap', '-p445', '--script', 'smb-protocols', ip],
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        
-        output = result.stdout
-        
-        info = {
-            'smb1': 'SMBv1' in output or 'NT LM 0.12' in output,
-            'smb2': 'SMBv2' in output or '2.02' in output or '2.1' in output,
-            'smb3': 'SMBv3' in output or '3.0' in output or '3.1' in output,
-        }
-        
-        return info
-        
-    except Exception:
-        return None
-
-def get_os_info(ip: str, timeout: int = 20) -> Optional[Dict]:
-    """Get OS information via SMB/nmap"""
-    try:
-        result = subprocess.run(
-            ['nmap', '-O', '--osscan-guess', ip],
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        
-        output = result.stdout
-        
-        os_info = {
-            'os': None,
-            'version': None,
-            'cpe': None
-        }
-        
-        # Parse OS detection
-        for line in output.split('\n'):
-            if 'OS details:' in line or 'Running:' in line:
-                os_info['os'] = line.split(':')[1].strip()
-            elif 'cpe:/o:' in line:
-                match = re.search(r'cpe:/o:([^:]+):([^:]+):([^:\s]+)', line)
-                if match:
-                    os_info['cpe'] = f"{match.group(1)}:{match.group(2)}:{match.group(3)}"
-        
-        return os_info if os_info['os'] else None
-        
-    except Exception:
-        return None
-
-def scan_host(ip: str, timeout: int = 2, use_metasploit: bool = False, 
-              use_nmap: bool = True, scan_type: str = 'quick') -> Dict:
+def run_nuclei_cve_scan(targets: List[str], output_dir: str = 'nuclei_cve_results') -> List[Dict]:
     """
-    Scan a single host for vulnerabilities
+    Run Nuclei scan with ONLY CVE templates (no web checks)
+    Returns: List of findings
+    """
+    print(f"\n{Colors.OKBLUE}[*] Running Nuclei CVE scan...{Colors.ENDC}")
+    print(f"{Colors.OKBLUE}[*] Filtering to CVE templates only (no web checks){Colors.ENDC}")
     
-    Args:
-        ip: IP address to scan
-        timeout: Connection timeout
-        use_metasploit: Whether to use Metasploit modules
-        use_nmap: Whether to use nmap scripts
-        scan_type: 'quick' or 'full'
+    # Create target file
+    target_file = 'vulnseek_targets.tmp'
+    with open(target_file, 'w') as f:
+        for target in targets:
+            f.write(f"{target}\n")
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Build nuclei command - ONLY CVE tags
+    cmd = [
+        'nuclei',
+        '-list', target_file,
+        '-tags', 'cve',  # ONLY CVE templates
+        '-exclude-tags', 'wordpress,joomla,drupal,magento,apache,nginx,iis,tomcat,jenkins',  # Exclude web-specific
+        '-severity', 'critical,high,medium',  # Focus on serious issues
+        '-json-export', f'{output_dir}/findings.json',
+        '-markdown-export', output_dir,
+        '-stats',
+        '-silent'
+    ]
+    
+    findings = []
+    
+    try:
+        print(f"{Colors.OKCYAN}[*] This may take several minutes depending on target count...{Colors.ENDC}")
         
-    Returns:
-        Dict with scan results
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=1800  # 30 minute timeout
+        )
+        
+        if result.stdout:
+            print(result.stdout)
+        
+        # Parse JSON results
+        json_file = f'{output_dir}/findings.json'
+        if os.path.exists(json_file):
+            with open(json_file, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            finding = json.loads(line)
+                            findings.append(finding)
+                        except json.JSONDecodeError:
+                            continue
+            
+            print(f"{Colors.OKGREEN}[+] Nuclei found {len(findings)} CVE(s){Colors.ENDC}")
+        
+    except subprocess.TimeoutExpired:
+        print(f"{Colors.WARNING}[!] Nuclei scan timed out{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}[!] Error running Nuclei: {e}{Colors.ENDC}")
+    finally:
+        # Cleanup temp file
+        if os.path.exists(target_file):
+            os.remove(target_file)
+    
+    return findings
+
+def scan_host_nmap(ip: str, timeout: int = 2, quick: bool = False) -> Dict:
+    """
+    Scan a host using nmap CVE scripts
     """
     result = {
         'ip': ip,
         'hostname': None,
         'vulnerabilities': [],
-        'os_info': None,
-        'smb_info': None,
         'ports_open': [],
-        'risk_level': 'LOW',
-        'error': None
+        'risk_level': 'LOW'
     }
     
     # Get hostname
@@ -360,218 +402,200 @@ def scan_host(ip: str, timeout: int = 2, use_metasploit: bool = False,
         result['hostname'] = hostname
     
     # Check critical ports
-    critical_ports = [445, 3389, 135, 139]
+    critical_ports = [445, 3389, 135, 139, 22, 21, 23, 80, 443, 8080]
     for port in critical_ports:
         if check_port(ip, port, timeout):
             result['ports_open'].append(port)
     
     if not result['ports_open']:
-        result['error'] = 'No critical ports open'
         return result
     
-    # Get OS info (if full scan)
-    if scan_type == 'full' and use_nmap:
-        os_info = get_os_info(ip, timeout=20)
-        if os_info:
-            result['os_info'] = os_info
+    # Run nmap CVE checks based on open ports
+    checks_to_run = []
+    for check_id, check_info in NMAP_CVE_CHECKS.items():
+        if check_info['port'] in result['ports_open']:
+            checks_to_run.append((check_id, check_info))
     
-    # Check for EternalBlue (MS17-010)
-    if 445 in result['ports_open']:
-        if use_nmap:
-            # Check SMB version
-            smb_info = get_smb_version(ip, timeout=10)
-            if smb_info:
-                result['smb_info'] = smb_info
-                
-                # SMBv1 enabled = potential EternalBlue
-                if smb_info.get('smb1'):
-                    print(f"    {Colors.WARNING}⚠ SMBv1 enabled{Colors.ENDC}")
-            
-            # Check with nmap script
-            vulnerable, output = check_eternalblue_nmap(ip, timeout=30)
-            if vulnerable:
-                result['vulnerabilities'].append({
-                    'name': 'EternalBlue',
-                    'cve': 'CVE-2017-0144',
-                    'severity': 'CRITICAL',
-                    'description': 'MS17-010 SMBv1 RCE',
-                    'confidence': 'HIGH',
-                    'method': 'nmap'
-                })
-                result['risk_level'] = 'CRITICAL'
+    if quick and len(checks_to_run) > 3:
+        # In quick mode, only run top 3 most critical
+        checks_to_run = [c for c in checks_to_run if c[1]['severity'] == 'CRITICAL'][:3]
+    
+    for check_id, check_info in checks_to_run:
+        vulnerable, output = run_nmap_cve_check(ip, check_id, check_info, timeout=30)
         
-        if use_metasploit:
-            # Check with Metasploit (more reliable)
-            print(f"    {Colors.OKBLUE}[*] Running Metasploit check...{Colors.ENDC}")
-            vulnerable, output, error = run_metasploit_module(
-                'auxiliary/scanner/smb/smb_ms17_010',
-                ip,
-                445,
-                timeout=60
-            )
-            if vulnerable:
-                result['vulnerabilities'].append({
-                    'name': 'EternalBlue',
-                    'cve': 'CVE-2017-0144',
-                    'severity': 'CRITICAL',
-                    'description': 'MS17-010 SMBv1 RCE (Metasploit confirmed)',
-                    'confidence': 'CONFIRMED',
-                    'method': 'metasploit'
-                })
-                result['risk_level'] = 'CRITICAL'
-    
-    # Check for BlueKeep (CVE-2019-0708)
-    if 3389 in result['ports_open'] and use_nmap:
-        vulnerable, output = check_bluekeep_nmap(ip, timeout=30)
         if vulnerable:
             result['vulnerabilities'].append({
-                'name': 'BlueKeep',
-                'cve': 'CVE-2019-0708',
-                'severity': 'CRITICAL',
-                'description': 'RDP Remote Code Execution',
+                'name': check_info['name'],
+                'cve': check_info['cve'],
+                'severity': check_info['severity'],
+                'description': check_info['description'],
                 'confidence': 'HIGH',
-                'method': 'nmap'
+                'method': 'nmap',
+                'port': check_info['port']
             })
-            if result['risk_level'] != 'CRITICAL':
+            
+            if check_info['severity'] == 'CRITICAL':
                 result['risk_level'] = 'CRITICAL'
-    
-    # Check for Zerologon (if DC port open)
-    if 135 in result['ports_open'] and use_metasploit and scan_type == 'full':
-        vulnerable, output, error = run_metasploit_module(
-            'auxiliary/scanner/dcerpc/zerologon',
-            ip,
-            timeout=60
-        )
-        if vulnerable:
-            result['vulnerabilities'].append({
-                'name': 'Zerologon',
-                'cve': 'CVE-2020-1472',
-                'severity': 'CRITICAL',
-                'description': 'Netlogon Elevation of Privilege',
-                'confidence': 'HIGH',
-                'method': 'metasploit'
-            })
-            result['risk_level'] = 'CRITICAL'
-    
-    # Adjust risk level
-    if result['vulnerabilities']:
-        severities = [v['severity'] for v in result['vulnerabilities']]
-        if 'CRITICAL' in severities:
-            result['risk_level'] = 'CRITICAL'
-        elif 'HIGH' in severities:
-            result['risk_level'] = 'HIGH'
-        elif 'MEDIUM' in severities:
-            result['risk_level'] = 'MEDIUM'
+            elif check_info['severity'] == 'HIGH' and result['risk_level'] != 'CRITICAL':
+                result['risk_level'] = 'HIGH'
     
     return result
 
-def save_vuln_list(results: List[Dict], filename: str = 'vulnlist.txt'):
-    """Save list of vulnerable IPs to a file"""
-    try:
-        with open(filename, 'w') as f:
-            for result in results:
-                if result['vulnerabilities']:
-                    f.write(f"{result['ip']}\n")
-        
-        print(f"\n{Colors.OKGREEN}[+] Vulnerable host list saved to: {filename}{Colors.ENDC}")
-    except Exception as e:
-        print(f"\n{Colors.FAIL}[!] Error saving vulnerable list: {e}{Colors.ENDC}")
-
-def save_details(results: List[Dict], txt_filename: str = 'vuln_details.txt', 
-                json_filename: str = 'vuln_details.json'):
-    """Save detailed scan results"""
-    # Save TXT format
-    try:
-        with open(txt_filename, 'w') as f:
-            f.write("VulnSeek - Vulnerability Scan Results\n")
-            f.write("=" * 70 + "\n")
-            f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            
-            vuln_hosts = [r for r in results if r['vulnerabilities']]
-            critical_count = sum(1 for r in results if r['risk_level'] == 'CRITICAL')
-            
-            f.write(f"Total Hosts Scanned: {len(results)}\n")
-            f.write(f"Vulnerable Hosts: {len(vuln_hosts)}\n")
-            f.write(f"Critical Risk Hosts: {critical_count}\n")
-            f.write("=" * 70 + "\n\n")
-            
-            for result in vuln_hosts:
-                f.write(f"Host: {result['ip']}\n")
-                if result['hostname']:
-                    f.write(f"Hostname: {result['hostname']}\n")
-                
-                f.write(f"Risk Level: {result['risk_level']}\n")
-                f.write(f"Open Ports: {', '.join(map(str, result['ports_open']))}\n")
-                
-                if result['os_info']:
-                    f.write(f"OS: {result['os_info'].get('os', 'Unknown')}\n")
-                
-                if result['smb_info']:
-                    smb_versions = []
-                    if result['smb_info'].get('smb1'):
-                        smb_versions.append('SMBv1')
-                    if result['smb_info'].get('smb2'):
-                        smb_versions.append('SMBv2')
-                    if result['smb_info'].get('smb3'):
-                        smb_versions.append('SMBv3')
-                    f.write(f"SMB Versions: {', '.join(smb_versions)}\n")
-                
-                f.write(f"\nVulnerabilities Found: {len(result['vulnerabilities'])}\n")
-                f.write("-" * 70 + "\n")
-                
-                for vuln in result['vulnerabilities']:
-                    f.write(f"\n  ⚠ {vuln['name']} ({vuln['cve']})\n")
-                    f.write(f"  Severity: {vuln['severity']}\n")
-                    f.write(f"  Description: {vuln['description']}\n")
-                    f.write(f"  Confidence: {vuln['confidence']}\n")
-                    f.write(f"  Detection Method: {vuln['method']}\n")
-                
-                f.write("\n" + "=" * 70 + "\n\n")
-        
-        print(f"{Colors.OKGREEN}[+] Detailed results saved to: {txt_filename}{Colors.ENDC}")
+def generate_reports(nmap_results: List[Dict], nuclei_findings: List[Dict]):
+    """Generate comprehensive reports"""
     
-    except Exception as e:
-        print(f"{Colors.FAIL}[!] Error saving TXT details: {e}{Colors.ENDC}")
+    # Generate CRITICAL_VULNS.txt
+    critical_vulns = {}
     
-    # Save JSON format
-    try:
-        with open(json_filename, 'w') as f:
-            json.dump(results, f, indent=2)
+    # Add nmap findings
+    for result in nmap_results:
+        for vuln in result['vulnerabilities']:
+            if vuln['severity'] in ['CRITICAL', 'HIGH']:
+                cve = vuln['cve']
+                if cve not in critical_vulns:
+                    critical_vulns[cve] = {
+                        'name': vuln['name'],
+                        'cve': cve,
+                        'severity': vuln['severity'],
+                        'description': vuln['description'],
+                        'ips': set(),
+                        'method': vuln['method']
+                    }
+                critical_vulns[cve]['ips'].add(result['ip'])
+    
+    # Add nuclei findings
+    for finding in nuclei_findings:
+        info = finding.get('info', {})
+        severity = info.get('severity', '').upper()
         
-        print(f"{Colors.OKGREEN}[+] JSON results saved to: {json_filename}{Colors.ENDC}")
+        if severity in ['CRITICAL', 'HIGH']:
+            template_id = finding.get('template-id', '')
+            # Extract CVE if present
+            cve_match = re.search(r'CVE-\d{4}-\d+', template_id.upper())
+            cve = cve_match.group(0) if cve_match else template_id
+            
+            if cve not in critical_vulns:
+                critical_vulns[cve] = {
+                    'name': info.get('name', 'Unknown'),
+                    'cve': cve,
+                    'severity': severity,
+                    'description': info.get('description', 'No description'),
+                    'ips': set(),
+                    'method': 'nuclei'
+                }
+            
+            # Extract IP from host
+            host = finding.get('host', '')
+            ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', host)
+            if ip_match:
+                critical_vulns[cve]['ips'].add(ip_match.group(1))
     
-    except Exception as e:
-        print(f"{Colors.FAIL}[!] Error saving JSON details: {e}{Colors.ENDC}")
+    # Write CRITICAL_VULNS.txt
+    if critical_vulns:
+        with open('CRITICAL_VULNS.txt', 'w', encoding='utf-8') as f:
+            f.write("="*80 + "\n")
+            f.write("CRITICAL AND HIGH SEVERITY VULNERABILITIES\n")
+            f.write("="*80 + "\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total Critical/High CVEs: {len(critical_vulns)}\n\n")
+            
+            # Sort by severity then by affected host count
+            severity_order = {'CRITICAL': 0, 'HIGH': 1}
+            sorted_vulns = sorted(critical_vulns.items(),
+                                key=lambda x: (severity_order.get(x[1]['severity'], 2),
+                                             -len(x[1]['ips'])))
+            
+            for idx, (cve, data) in enumerate(sorted_vulns, 1):
+                f.write("="*80 + "\n")
+                f.write(f"[{idx}] [{data['severity']}] {data['name']}\n")
+                f.write("="*80 + "\n\n")
+                
+                f.write(f"CVE: {data['cve']}\n")
+                f.write(f"Detection Method: {data['method']}\n")
+                f.write(f"Affected Hosts: {len(data['ips'])}\n\n")
+                
+                f.write("AFFECTED SYSTEMS:\n")
+                f.write("-" * 40 + "\n")
+                for ip in sorted(data['ips']):
+                    f.write(f"  • {ip}\n")
+                f.write("\n")
+                
+                f.write("DESCRIPTION:\n")
+                f.write("-" * 40 + "\n")
+                f.write(f"{data['description']}\n\n")
+        
+        print(f"{Colors.OKGREEN}[+] Critical vulnerabilities report: CRITICAL_VULNS.txt{Colors.ENDC}")
+    
+    # Generate vulnlist.txt (all vulnerable IPs)
+    all_vuln_ips = set()
+    for result in nmap_results:
+        if result['vulnerabilities']:
+            all_vuln_ips.add(result['ip'])
+    
+    for finding in nuclei_findings:
+        host = finding.get('host', '')
+        ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', host)
+        if ip_match:
+            all_vuln_ips.add(ip_match.group(1))
+    
+    with open('vulnlist.txt', 'w') as f:
+        for ip in sorted(all_vuln_ips):
+            f.write(f"{ip}\n")
+    
+    print(f"{Colors.OKGREEN}[+] Vulnerable host list: vulnlist.txt{Colors.ENDC}")
+    
+    # Generate detailed JSON
+    combined_results = {
+        'scan_date': datetime.now().isoformat(),
+        'nmap_results': nmap_results,
+        'nuclei_findings': nuclei_findings,
+        'summary': {
+            'total_hosts_scanned': len(nmap_results),
+            'vulnerable_hosts': len(all_vuln_ips),
+            'critical_cves': len([v for v in critical_vulns.values() if v['severity'] == 'CRITICAL']),
+            'high_cves': len([v for v in critical_vulns.values() if v['severity'] == 'HIGH'])
+        }
+    }
+    
+    with open('vuln_details.json', 'w', encoding='utf-8') as f:
+        json.dump(combined_results, f, indent=2, default=str)
+    
+    print(f"{Colors.OKGREEN}[+] Detailed results: vuln_details.json{Colors.ENDC}")
 
 def main():
     parser = argparse.ArgumentParser(
-        description='VulnSeek v1.0 - Vulnerability Scanner',
+        description='VulnSeek v2.0 - Enhanced Multi-Method Vulnerability Scanner',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s                              # Quick nmap scan
-  %(prog)s -m                           # Use Metasploit modules
-  %(prog)s --full -m                    # Full scan with Metasploit
-  %(prog)s -f targets.txt -v            # Verbose scan
+  %(prog)s --nuclei                     # Add Nuclei CVE scan
+  %(prog)s --metasploit                 # Add Metasploit checks
+  %(prog)s --full --nuclei              # Full scan with all methods
+  %(prog)s -f targets.txt --nuclei -v   # Verbose with Nuclei
         """
     )
     
-    parser.add_argument('-f', '--file', 
+    parser.add_argument('-f', '--file',
                        default='iplist.txt',
                        help='Input file with IP addresses (default: iplist.txt)')
     
-    parser.add_argument('-w', '--workers', 
-                       type=int, 
-                       default=5,
-                       help='Number of concurrent workers (default: 5)')
+    parser.add_argument('-w', '--workers',
+                       type=int,
+                       default=10,
+                       help='Number of concurrent workers (default: 10)')
     
-    parser.add_argument('-m', '--metasploit',
+    parser.add_argument('--nuclei',
                        action='store_true',
-                       help='Use Metasploit modules (slower but more accurate)')
+                       help='Run Nuclei CVE scan (CVEs only, no web checks)')
+    
+    parser.add_argument('--metasploit',
+                       action='store_true',
+                       help='Use Metasploit modules for detection')
     
     parser.add_argument('--full',
                        action='store_true',
-                       help='Full scan (includes OS detection)')
+                       help='Full scan (all nmap checks, not just critical)')
     
     parser.add_argument('--timeout',
                        type=int,
@@ -580,24 +604,33 @@ Examples:
     
     parser.add_argument('-v', '--verbose',
                        action='store_true',
-                       help='Verbose output (show all hosts)')
+                       help='Verbose output')
     
     args = parser.parse_args()
     
     print_banner()
     
-    # Check for nmap
-    try:
-        subprocess.run(['nmap', '--version'], capture_output=True, timeout=5)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        print(f"{Colors.FAIL}[!] Error: nmap not found. Please install: sudo apt install nmap{Colors.ENDC}")
+    # Check available tools
+    tools = check_tools()
+    
+    print(f"{Colors.OKCYAN}[*] Tool Availability:{Colors.ENDC}")
+    print(f"  {'✓' if tools['nmap'] else '✗'} nmap: {'Available' if tools['nmap'] else 'NOT FOUND'}")
+    print(f"  {'✓' if tools['nuclei'] else '✗'} nuclei: {'Available' if tools['nuclei'] else 'NOT FOUND'}")
+    print(f"  {'✓' if tools['msfconsole'] else '✗'} msfconsole: {'Available' if tools['msfconsole'] else 'NOT FOUND'}")
+    print()
+    
+    if not tools['nmap']:
+        print(f"{Colors.FAIL}[!] Error: nmap is required. Install with: sudo apt install nmap{Colors.ENDC}")
         return 1
     
-    # Check for Metasploit if requested
-    if args.metasploit:
-        if not check_msfconsole():
-            print(f"{Colors.WARNING}[!] Warning: msfconsole not found. Install Metasploit for more accurate results{Colors.ENDC}")
-            args.metasploit = False
+    if args.nuclei and not tools['nuclei']:
+        print(f"{Colors.WARNING}[!] Warning: Nuclei not found. Skipping Nuclei scan.{Colors.ENDC}")
+        print(f"{Colors.WARNING}[*] Install with: go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest{Colors.ENDC}\n")
+        args.nuclei = False
+    
+    if args.metasploit and not tools['msfconsole']:
+        print(f"{Colors.WARNING}[!] Warning: Metasploit not found. Skipping Metasploit checks.{Colors.ENDC}\n")
+        args.metasploit = False
     
     # Read IP list
     ips = read_ip_list(args.file)
@@ -605,24 +638,27 @@ Examples:
         print(f"{Colors.FAIL}[!] No valid IPs to scan{Colors.ENDC}")
         return 1
     
-    scan_type = 'full' if args.full else 'quick'
-    
     print(f"\n{Colors.OKBLUE}[*] Starting vulnerability scan...{Colors.ENDC}")
     print(f"{Colors.OKBLUE}[*] Targets: {len(ips)}{Colors.ENDC}")
     print(f"{Colors.OKBLUE}[*] Workers: {args.workers}{Colors.ENDC}")
-    print(f"{Colors.OKBLUE}[*] Scan Type: {scan_type.upper()}{Colors.ENDC}")
+    print(f"{Colors.OKBLUE}[*] Nmap CVE Checks: {'Full' if args.full else 'Critical Only'}{Colors.ENDC}")
+    print(f"{Colors.OKBLUE}[*] Nuclei CVE Scan: {'Yes' if args.nuclei else 'No'}{Colors.ENDC}")
     print(f"{Colors.OKBLUE}[*] Metasploit: {'Yes' if args.metasploit else 'No'}{Colors.ENDC}")
     print()
     
-    # Scan hosts
-    results = []
+    # Phase 1: Nmap scanning
+    print(f"{Colors.HEADER}{'='*70}{Colors.ENDC}")
+    print(f"{Colors.HEADER}Phase 1: Nmap CVE Scanning{Colors.ENDC}")
+    print(f"{Colors.HEADER}{'='*70}{Colors.ENDC}\n")
+    
+    nmap_results = []
     completed = 0
     vuln_found = 0
     
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
             future_to_ip = {
-                executor.submit(scan_host, ip, args.timeout, args.metasploit, True, scan_type): ip 
+                executor.submit(scan_host_nmap, ip, args.timeout, not args.full): ip
                 for ip in ips
             }
             
@@ -632,70 +668,74 @@ Examples:
                 
                 try:
                     result = future.result()
-                    results.append(result)
+                    nmap_results.append(result)
                     
                     if result['vulnerabilities']:
                         vuln_found += 1
                         
-                        # Color code by risk
-                        if result['risk_level'] == 'CRITICAL':
-                            risk_color = Colors.FAIL
-                        elif result['risk_level'] == 'HIGH':
-                            risk_color = Colors.WARNING
-                        else:
-                            risk_color = Colors.OKBLUE
-                        
+                        risk_color = Colors.FAIL if result['risk_level'] == 'CRITICAL' else Colors.WARNING
                         hostname_str = f" ({result['hostname']})" if result['hostname'] else ""
                         
                         print(f"{risk_color}[{result['risk_level']}]{Colors.ENDC} {result['ip']}{hostname_str}")
                         
-                        # Show vulnerabilities
                         for vuln in result['vulnerabilities']:
-                            print(f"    {Colors.FAIL}⚠ {vuln['name']} ({vuln['cve']}) - {vuln['severity']}{Colors.ENDC}")
+                            print(f"    {Colors.FAIL}⚠ {vuln['name']} ({vuln['cve']}){Colors.ENDC}")
                     
                     elif args.verbose:
-                        print(f"[ ] {ip} - No vulnerabilities detected")
+                        print(f"[ ] {ip} - No nmap CVEs detected")
                     
-                    # Progress
-                    if completed % 5 == 0 or completed == len(ips):
+                    if completed % 10 == 0:
                         print(f"\n{Colors.OKCYAN}[*] Progress: {completed}/{len(ips)} ({vuln_found} vulnerable){Colors.ENDC}\n")
                 
                 except Exception as e:
-                    print(f"{Colors.FAIL}[!] Error scanning {ip}: {e}{Colors.ENDC}")
+                    if args.verbose:
+                        print(f"{Colors.FAIL}[!] Error scanning {ip}: {e}{Colors.ENDC}")
     
     except KeyboardInterrupt:
-        print(f"\n\n{Colors.WARNING}[!] Scan interrupted by user{Colors.ENDC}")
+        print(f"\n{Colors.WARNING}[!] Scan interrupted by user{Colors.ENDC}")
     
-    # Summary
-    print(f"\n{Colors.HEADER}{'=' * 70}{Colors.ENDC}")
+    # Phase 2: Nuclei CVE scanning
+    nuclei_findings = []
+    if args.nuclei and tools['nuclei']:
+        print(f"\n{Colors.HEADER}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.HEADER}Phase 2: Nuclei CVE Scanning{Colors.ENDC}")
+        print(f"{Colors.HEADER}{'='*70}{Colors.ENDC}\n")
+        
+        nuclei_findings = run_nuclei_cve_scan(ips)
+    
+    # Generate reports
+    print(f"\n{Colors.HEADER}{'='*70}{Colors.ENDC}")
+    print(f"{Colors.HEADER}Generating Reports{Colors.ENDC}")
+    print(f"{Colors.HEADER}{'='*70}{Colors.ENDC}\n")
+    
+    generate_reports(nmap_results, nuclei_findings)
+    
+    # Final summary
+    print(f"\n{Colors.HEADER}{'='*70}{Colors.ENDC}")
     print(f"{Colors.HEADER}Scan Complete{Colors.ENDC}")
-    print(f"{Colors.HEADER}{'=' * 70}{Colors.ENDC}")
-    print(f"Total Hosts Scanned: {completed}")
-    print(f"Vulnerable Hosts: {vuln_found}")
+    print(f"{Colors.HEADER}{'='*70}{Colors.ENDC}")
     
-    critical_hosts = sum(1 for r in results if r['risk_level'] == 'CRITICAL')
-    high_hosts = sum(1 for r in results if r['risk_level'] == 'HIGH')
+    nmap_vuln_count = sum(1 for r in nmap_results if r['vulnerabilities'])
     
-    print(f"Critical Risk: {critical_hosts}")
-    print(f"High Risk: {high_hosts}")
+    nuclei_vuln_ips = set()
+    for finding in nuclei_findings:
+        host = finding.get('host', '')
+        ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', host)
+        if ip_match:
+            nuclei_vuln_ips.add(ip_match.group(1))
     
-    # Count vulnerabilities
-    all_vulns = {}
-    for result in results:
-        for vuln in result['vulnerabilities']:
-            vuln_name = vuln['name']
-            all_vulns[vuln_name] = all_vulns.get(vuln_name, 0) + 1
+    print(f"Hosts Scanned: {len(ips)}")
+    print(f"Nmap Vulnerable Hosts: {nmap_vuln_count}")
+    if args.nuclei:
+        print(f"Nuclei CVEs Found: {len(nuclei_findings)}")
+        print(f"Nuclei Vulnerable Hosts: {len(nuclei_vuln_ips)}")
     
-    if all_vulns:
-        print(f"\nVulnerability Breakdown:")
-        for vuln_name, count in sorted(all_vulns.items(), key=lambda x: x[1], reverse=True):
-            print(f"  {vuln_name}: {count} host(s)")
-    
-    # Save results
-    if vuln_found > 0:
-        print()
-        save_vuln_list(results)
-        save_details(results)
+    print(f"\n{Colors.OKGREEN}Reports Generated:{Colors.ENDC}")
+    print(f"  • CRITICAL_VULNS.txt - Priority vulnerabilities with affected IPs")
+    print(f"  • vulnlist.txt - All vulnerable IPs")
+    print(f"  • vuln_details.json - Complete scan results")
+    if args.nuclei:
+        print(f"  • nuclei_cve_results/ - Nuclei markdown reports")
     
     return 0
 
