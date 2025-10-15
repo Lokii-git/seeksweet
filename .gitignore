@@ -48,6 +48,11 @@ tmp/
 
 # Logs
 *.log
+
+# Legacy/archived files
+*-v1-legacy.py
+*-legacy.md
+webseek/test_smart_reports.py
 logs/
 
 # Environment
