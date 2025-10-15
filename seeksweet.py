@@ -146,11 +146,11 @@ SEEK_TOOLS = [
         'id': 8,
         'name': 'WebSeek',
         'script': 'webseek/webseek.py',
-        'priority': 'MEDIUM',
+        'priority': 'HIGH',
         'phase': 'Web',
-        'description': 'Find web servers and management interfaces',
-        'why': 'Discover web applications and admin portals',
-        'outputs': ['weblist.txt', 'web_details.txt', 'web_details.json'],
+        'description': 'Nuclei-powered web vulnerability scanner with 5000+ templates',
+        'why': 'Comprehensive web security scanning with smart reporting',
+        'outputs': ['CRITICAL_FINDINGS.txt', 'findings.json', 'webseek_report/', 'IP_TO_VULNS.txt'],
         'typical_args': 'iplist.txt -v'
     },
     {

@@ -1,521 +1,262 @@
-# WebSeek - Nuclei-Powered Web Vulnerability Scanner# WebSeek - Web Vulnerability Scanner
+# WebSeek - Web Vulnerability Scanner
 
-
-
-## Version 2.0 (Current)## Overview
-
+## Overview
 WebSeek is a specialized web vulnerability scanner designed for internal network assessments. It discovers common web security issues including exposed Git repositories, backup files, information disclosure, directory listings, and missing security headers.
 
-**webseek.py** is now powered by Nuclei with smart reporting features designed for penetration testing documentation.
-
 ## Features
-
-### Key Features- ✅ **Git Repository Exposure** - Detect exposed .git directories
-
-- 🎯 **5000+ Nuclei templates** - Comprehensive vulnerability coverage- ✅ **Backup File Discovery** - Find .bak, .old, .zip, and other backup files
-
-- 📋 **Smart Reporting** - Report-ready outputs with grouped findings- ✅ **Information Disclosure** - Identify phpinfo, debug pages, error messages
-
-- 🔍 **CIDR Support** - Automatically expands IP ranges- ✅ **Directory Listing** - Detect accessible directory indexes
-
-- 📊 **Multiple Views** - By severity, by vulnerability, by host- ✅ **Common Path Enumeration** - Check /admin, /backup, /config paths
-
-- ✅ **Auto-grouped** - One vuln with 20 hosts (not 20 separate findings)- ✅ **Default Credentials Testing** - Test common admin:admin combinations
-
+- ✅ **Git Repository Exposure** - Detect exposed .git directories
+- ✅ **Backup File Discovery** - Find .bak, .old, .zip, and other backup files
+- ✅ **Information Disclosure** - Identify phpinfo, debug pages, error messages
+- ✅ **Directory Listing** - Detect accessible directory indexes
+- ✅ **Common Path Enumeration** - Check /admin, /backup, /config paths
+- ✅ **Default Credentials Testing** - Test common admin:admin combinations
 - ✅ **SSL/TLS Analysis** - Identify weak ciphers and protocols
-
-### Quick Start- ✅ **Security Headers Check** - Verify presence of security headers
-
-```bash- ✅ **Configuration File Exposure** - Find .env, web.config, settings files
-
-# Full scan- ✅ **Multi-port Scanning** - Check 80, 443, 8080, 8443, 8888, 9090
-
-./webseek.py- ✅ **Concurrent Scanning** - Fast multi-threaded operation
-
+- ✅ **Security Headers Check** - Verify presence of security headers
+- ✅ **Configuration File Exposure** - Find .env, web.config, settings files
+- ✅ **Multi-port Scanning** - Check 80, 443, 8080, 8443, 8888, 9090
+- ✅ **Concurrent Scanning** - Fast multi-threaded operation
 - ✅ **JSON Export** - Machine-parseable output
 
-# Critical/High only (recommended for pentests)
+## Installation
 
-./webseek.py --severity critical,high## Installation
-
-
-
-# Default credentials### Prerequisites
-
-./webseek.py --tags default-login```bash
-
-# Python 3.6+
-
-# CVEs onlypython3 --version
-
-./webseek.py --tags cve
-
-```# Required packages
-
-pip install requests urllib3
-
-### Output Files```
-
-**For Report Writing:**
-
-- `CRITICAL_FINDINGS.txt` ⭐ **Start here!** Priority vulnerabilities with affected IPs### Download
-
-- `HIGH_VULNS.txt`, `MEDIUM_VULNS.txt`, `LOW_VULNS.txt` - Grouped by severity```bash
-
-- `IP_TO_VULNS.txt` - Vulnerabilities per hostcd /path/to/seek-tools/
-
-chmod +x webseek/webseek.py
-
-**Standard Output:**```
-
-- `findings.json` - JSON export
-
-- `findings.txt` - Complete detailed list## Usage
-
-- `vulnerable_hosts.txt` - Simple IP list
-
-- `webseek_report/` - Nuclei markdown reports### Basic Commands
-
+### Prerequisites
 ```bash
+# Python 3.6+
+python3 --version
 
-### Documentation# Basic vulnerability scan
+# Required packages
+pip install requests urllib3
+```
 
-- **WEBSEEK_V2_GUIDE.md** - Complete usage guide./webseek.py
+### Download
+```bash
+cd /path/to/seek-tools/
+chmod +x webseek/webseek.py
+```
 
-- **SMART_REPORTS_SUMMARY.md** - Quick reference for report writing
+## Usage
+
+### Basic Commands
+```bash
+# Basic vulnerability scan
+./webseek.py
 
 # Full scan (all checks)
+./webseek.py --full
 
-### Requirements./webseek.py --full
-
-Requires Nuclei to be installed:
-
-```bash# Git exposure detection only
-
-go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest./webseek.py --git
-
-```
+# Git exposure detection only
+./webseek.py --git
 
 # Backup file hunting
+./webseek.py --backup
 
-### Example Output./webseek.py --backup
+# Info disclosure check
+./webseek.py --info
 
+# Test default credentials
+./webseek.py -u admin -p admin
+
+# Scan from file
+./webseek.py -f targets.txt
+
+# Fast scan (more workers)
+./webseek.py -w 50 --full
 ```
 
-SCAN SUMMARY# Info disclosure check
-
-============================================================./webseek.py --info
-
-Total Findings: 847
-
-Unique Vulnerabilities: 79# Test default credentials
-
-Vulnerable Hosts: 154./webseek.py -u admin -p admin
-
-
-
-Findings by Severity:# Scan from file
-
-  [HIGH] 11./webseek.py -f targets.txt
-
-  [MEDIUM] 3
-
-  [LOW] 14# Fast scan (more workers)
-
-  [INFO] 819./webseek.py -w 50 --full
-
+### Command-Line Options
 ```
-
-📋 For Report Writing:
-
-  • CRITICAL_FINDINGS.txt     - 11 priority vulnerabilities### Command-Line Options
-
-  • HIGH_VULNS.txt            - High severity grouped```
-
-```Targeting:
-
+Targeting:
   IP/URL                   Single target (192.168.1.10 or http://target)
+  -f, --file FILE          File containing targets
 
----  -f, --file FILE          File containing targets
-
-
-
-## Version 1.0 (Legacy)Scan Modes:
-
+Scan Modes:
   --full                   Full scan (all checks)
-
-**webseek-v1-legacy.py** is the original custom scanner (archived).  --git                    Git exposure only
-
+  --git                    Git exposure only
   --backup                 Backup files only
-
-### When to use v1:  --info                   Information disclosure only
-
-- Don't have Nuclei installed  --headers                Security headers only
-
-- Need quick custom checks  --paths                  Common paths enumeration only
-
-- Working offline without templates
+  --info                   Information disclosure only
+  --headers                Security headers only
+  --paths                  Common paths enumeration only
 
 Authentication:
+  -u, --username USER      Username for credential testing
+  -p, --password PASS      Password for credential testing
 
-### Features (v1):  -u, --username USER      Username for credential testing
-
-- ~50 hardcoded vulnerability checks  -p, --password PASS      Password for credential testing
-
-- Custom scanning engine
-
-- No external dependenciesConnection:
-
-- Self-contained  --ports PORTS            Ports to scan (default: 80,443,8080,8443,8888,9090)
-
+Connection:
+  --ports PORTS            Ports to scan (default: 80,443,8080,8443,8888,9090)
   --timeout SECONDS        Request timeout (default: 5)
+  -w, --workers N          Concurrent threads (default: 10)
 
-See **README-v1-legacy.md** for v1 documentation.  -w, --workers N          Concurrent threads (default: 10)
-
-
-
----Output:
-
+Output:
   -v, --verbose            Detailed output
-
-## Comparison  -o, --output DIR         Output directory
-
+  -o, --output DIR         Output directory
   --json                   JSON output only
-
-| Feature | v2.0 (Current) | v1.0 (Legacy) |```
-
-|---------|----------------|---------------|
-
-| Templates | 5000+ Nuclei | ~50 hardcoded |## Output Files
-
-| CVE Detection | Comprehensive | Limited |
-
-| Updates | Auto template updates | Manual code |### weblist.txt
-
-| Reporting | Smart grouped reports | Basic text |List of vulnerable web servers:
-
-| Dependencies | Requires Nuclei | None |```
-
-| Best For | Production pentests | Quick scans |http://192.168.1.10 - Git Exposure, Backup Files
-
-https://192.168.1.11 - Directory Listing, Info Disclosure
-
----http://192.168.1.12:8080 - Missing Security Headers
-
 ```
 
-## Integration with SeekSweet
+## Output Files
+
+### weblist.txt
+List of vulnerable web servers:
+```
+http://192.168.1.10 - Git Exposure, Backup Files
+https://192.168.1.11 - Directory Listing, Info Disclosure
+http://192.168.1.12:8080 - Missing Security Headers
+```
 
 ### findings.txt
+Detailed findings summary:
+```
+[CRITICAL] Git Repository Exposed
+URL: http://192.168.1.10/.git/HEAD
+Description: Full git repository accessible
+Recommendation: Remove .git directory from web root
 
-WebSeek v2 integrates with the SeekSweet orchestrator:Detailed findings summary:
+[HIGH] PHPInfo Page Accessible
+URL: http://192.168.1.11/phpinfo.php
+Description: Detailed PHP configuration exposed
+Recommendation: Remove phpinfo page from production
 
-```bash```
-
-cd ..[CRITICAL] Git Repository Exposed
-
-./seeksweet.pyURL: http://192.168.1.10/.git/HEAD
-
-# Select WebSeek from menuDescription: Full git repository accessible
-
-```Recommendation: Remove .git directory from web root
-
-
-
-The orchestrator will run:[HIGH] PHPInfo Page Accessible
-
-```bashURL: http://192.168.1.11/phpinfo.php
-
-python webseek/webseek.py iplist.txt -vDescription: Detailed PHP configuration exposed
-
-```Recommendation: Remove phpinfo page from production
-
-
-
----[MEDIUM] Backup File Found
-
+[MEDIUM] Backup File Found
 URL: http://192.168.1.12/config.php.bak
-
-## Usage ExamplesSize: 4,521 bytes
-
+Size: 4,521 bytes
 Recommendation: Remove backup files from web root
-
-### Basic Scanning```
-
-```bash
-
-# Full scan with all templates### git_repos.txt
-
-./webseek.pyExposed Git repositories:
-
 ```
 
-# Scan specific targetshttp://192.168.1.10/.git/
-
-./webseek.py targets.txthttp://192.168.1.15/.git/
-
+### git_repos.txt
+Exposed Git repositories:
+```
+http://192.168.1.10/.git/
+http://192.168.1.15/.git/
 http://10.0.0.50/.git/
-
-# CIDR notation (auto-expands)```
-
-echo "10.0.0.0/24" > targets.txt
-
-./webseek.py targets.txt### backup_files.txt
-
-```Discovered backup files:
-
 ```
 
-### Filtered Scanninghttp://192.168.1.10/index.php.bak
-
-```bashhttp://192.168.1.11/config.old
-
-# Critical and High onlyhttp://192.168.1.12/database.php~
-
-./webseek.py --severity critical,highhttp://192.168.1.13/backup.zip
-
+### backup_files.txt
+Discovered backup files:
+```
+http://192.168.1.10/index.php.bak
+http://192.168.1.11/config.old
+http://192.168.1.12/database.php~
+http://192.168.1.13/backup.zip
 ```
 
-# Only CVEs
-
-./webseek.py --tags cve### web_details.json
-
+### web_details.json
 Machine-parseable JSON export:
-
-# Default credentials```json
-
-./webseek.py --tags default-login{
-
+```json
+{
   "scan_time": "2025-10-13T15:00:00",
-
-# Information disclosure  "total_targets": 254,
-
-./webseek.py --tags exposure,disclosure  "vulnerable_hosts": 45,
-
+  "total_targets": 254,
+  "vulnerable_hosts": 45,
   "findings": [
-
-# Admin panels    {
-
-./webseek.py --tags panel,admin      "host": "192.168.1.10",
-
-```      "port": 80,
-
+    {
+      "host": "192.168.1.10",
+      "port": 80,
       "protocol": "http",
-
-### Performance Tuning      "vulnerabilities": [
-
-```bash        {
-
-# Faster scanning          "type": "git_exposure",
-
-./webseek.py --rate-limit 300 --concurrency 50          "severity": "CRITICAL",
-
+      "vulnerabilities": [
+        {
+          "type": "git_exposure",
+          "severity": "CRITICAL",
           "url": "http://192.168.1.10/.git/HEAD",
-
-# Slower/quieter scanning          "status_code": 200,
-
-./webseek.py --rate-limit 50 --concurrency 10          "details": "Full repository accessible"
-
+          "status_code": 200,
+          "details": "Full repository accessible"
         },
-
-# Increase timeout for slow networks        {
-
-./webseek.py --timeout 30          "type": "backup_file",
-
-```          "severity": "MEDIUM",
-
+        {
+          "type": "backup_file",
+          "severity": "MEDIUM",
           "url": "http://192.168.1.10/config.php.bak",
-
-### Template Management          "size": "4521"
-
-```bash        }
-
-# Update templates before scanning      ],
-
-./webseek.py --update      "missing_headers": [
-
+          "size": "4521"
+        }
+      ],
+      "missing_headers": [
         "X-Frame-Options",
-
-# Use custom templates        "Content-Security-Policy",
-
-./webseek.py --templates /path/to/custom/        "Strict-Transport-Security"
-
-```      ]
-
+        "Content-Security-Policy",
+        "Strict-Transport-Security"
+      ]
     }
-
----  ]
-
+  ]
 }
+```
 
-## Report Writing Workflow```
+## Vulnerability Categories
 
-
-
-### Step 1: Run the scan## Vulnerability Categories
-
-```bash
-
-./webseek.py --severity critical,high### 1. Git Repository Exposure (CRITICAL)
-
-```**What it is**: Exposed .git directory allowing source code download
-
-
-
-### Step 2: Open CRITICAL_FINDINGS.txt**Checks**:
-
-This file contains everything you need:- `/.git/`
-
-- Vulnerability name (use as finding title)- `/.git/config`
-
-- Description (ready-to-use)- `/.git/HEAD`
-
-- Affected systems (bullet-pointed IPs)- `/.git/index`
-
-- CVE/CVSS scores
-
-- References**Impact**: Complete source code disclosure, credentials in commits, intellectual property theft
-
-
-
-### Step 3: Copy to your report**Example**:
-
-Each vulnerability is formatted for easy copying:```bash
-
-./webseek.py --git 192.168.1.0/24
-
-```# Found: http://192.168.1.10/.git/HEAD
-
-[1] [HIGH] HP Printer Default Login# Can extract: git-dumper http://192.168.1.10/.git/ output/
-
-=====================================```
-
-Affected Hosts: 8
-
-  • 10.64.51.14### 2. Backup File Discovery (MEDIUM-HIGH)
-
-  • 10.64.51.23**What it is**: Backup files containing source code or credentials
-
-  • ...
+### 1. Git Repository Exposure (CRITICAL)
+**What it is**: Exposed .git directory allowing source code download
 
 **Checks**:
+- `/.git/`
+- `/.git/config`
+- `/.git/HEAD`
+- `/.git/index`
 
-DESCRIPTION:- `*.bak` - Backup files
-
-HP printers allow administrative access...- `*.old` - Old versions
-
-- `*.save` - Saved files
-
-CVE ID: CVE-2024-XXXXX- `*.zip` - Archive files
-
-CVSS Score: 7.5- `*~` - Editor backups
-
-```- `*.swp` - Vim swap files
-
-
-
-### Step 4: Use IP_TO_VULNS.txt**Impact**: Source code disclosure, credential exposure, logic flaws revealed
-
-Shows which hosts are most vulnerable - great for:
-
-- Remediation prioritization**Example**:
-
-- Client discussions```bash
-
-- Asset risk assessment./webseek.py --backup -f webservers.txt
-
-# Found: config.php.bak, database.yml.old, backup.zip
-
----```
-
-
-
-## Troubleshooting### 3. Information Disclosure (HIGH)
-
-**What it is**: Pages revealing sensitive configuration or debug information
-
-**Nuclei not found?**
-
-```bash**Types**:
-
-go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest- **PHPInfo**: Full PHP configuration (phpinfo.php)
-
-```- **Debug Pages**: Stack traces, error messages
-
-- **Directory Listings**: File and directory browsing
-
-**No findings?**- **SQL Errors**: Database structure leakage
-
-- Check if targets are reachable
-
-- Try with `--severity info` to see everything**Impact**: Information gathering, attack surface mapping, credential hints
-
-- Verify `findings.json` exists
+**Impact**: Complete source code disclosure, credentials in commits, intellectual property theft
 
 **Example**:
-
-**Too much output?**```bash
-
-- Use `--severity critical,high`./webseek.py --info http://target.com
-
-- Filter by `--tags cve`# Found: /phpinfo.php (PHP 7.4.3, exposed paths)
-
-- Use specific templates: `--templates cves/`# Found: / (Directory listing enabled)
-
+```bash
+./webseek.py --git 192.168.1.0/24
+# Found: http://192.168.1.10/.git/HEAD
+# Can extract: git-dumper http://192.168.1.10/.git/ output/
 ```
 
----
+### 2. Backup File Discovery (MEDIUM-HIGH)
+**What it is**: Backup files containing source code or credentials
+
+**Checks**:
+- `*.bak` - Backup files
+- `*.old` - Old versions
+- `*.save` - Saved files
+- `*.zip` - Archive files
+- `*~` - Editor backups
+- `*.swp` - Vim swap files
+
+**Impact**: Source code disclosure, credential exposure, logic flaws revealed
+
+**Example**:
+```bash
+./webseek.py --backup -f webservers.txt
+# Found: config.php.bak, database.yml.old, backup.zip
+```
+
+### 3. Information Disclosure (HIGH)
+**What it is**: Pages revealing sensitive configuration or debug information
+
+**Types**:
+- **PHPInfo**: Full PHP configuration (phpinfo.php)
+- **Debug Pages**: Stack traces, error messages
+- **Directory Listings**: File and directory browsing
+- **SQL Errors**: Database structure leakage
+
+**Impact**: Information gathering, attack surface mapping, credential hints
+
+**Example**:
+```bash
+./webseek.py --info http://target.com
+# Found: /phpinfo.php (PHP 7.4.3, exposed paths)
+# Found: / (Directory listing enabled)
+```
 
 ### 4. Common Path Enumeration (LOW-MEDIUM)
+**What it is**: Accessible admin panels, config pages, or sensitive paths
 
-## Migration from v1**What it is**: Accessible admin panels, config pages, or sensitive paths
-
-
-
-If you were using WebSeek v1:**Paths Checked**:
-
+**Paths Checked**:
 - `/admin`, `/administrator` - Admin panels
-
-✅ **Compatible:** Same positional argument for IP file  - `/backup`, `/backups` - Backup locations
-
-✅ **Compatible:** Same `-v` verbose flag  - `/config`, `/configuration` - Config files
-
-✅ **Enhanced:** More detailed output  - `/phpmyadmin`, `/cpanel` - Management interfaces
-
-✅ **Enhanced:** Smart grouped reports  - `/.env`, `/web.config` - Configuration files
-
-⚠️ **Requires:** Nuclei installation
+- `/backup`, `/backups` - Backup locations
+- `/config`, `/configuration` - Config files
+- `/phpmyadmin`, `/cpanel` - Management interfaces
+- `/.env`, `/web.config` - Configuration files
 
 **Impact**: Attack surface discovery, potential access to admin functions
 
-All v1 outputs are still generated, plus new smart report files.
-
 **Example**:
-
----```bash
-
+```bash
 ./webseek.py --paths 10.0.0.0/24
-
-## Contributing# Found: /admin (401 Unauthorized - panel exists)
-
+# Found: /admin (401 Unauthorized - panel exists)
 # Found: /backup (200 OK - accessible)
-
-Report issues or suggestions:```
-
-- GitHub: https://github.com/Lokii-git/seeksweet
+```
 
 ### 5. Missing Security Headers (LOW)
+**What it is**: Absence of HTTP security headers
 
----**What it is**: Absence of HTTP security headers
-
-
-
-## License**Headers Checked**:
-
+**Headers Checked**:
 - `X-Frame-Options` - Clickjacking protection
-
-Part of the SeekSweet reconnaissance framework.- `X-Content-Type-Options` - MIME sniffing protection
-
+- `X-Content-Type-Options` - MIME sniffing protection
 - `X-XSS-Protection` - XSS filter
 - `Strict-Transport-Security` - HTTPS enforcement
 - `Content-Security-Policy` - Resource loading policy

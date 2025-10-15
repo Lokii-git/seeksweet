@@ -1,55 +1,50 @@
 #!/usr/bin/env python3
 """
-WebSeek v1.0 - Web Vulnerability Scanner
-Discover common web security issues on internal networks
+WebSeek v2.0 - Nuclei-Powered Web Vulnerability Scanner
+Leverage Nuclei's extensive template library for comprehensive web security scanning
 
 Features:
-- Directory listing detection
-- Backup file discovery (.bak, .old, ~)
-- Information disclosure (phpinfo, debug pages)
-- Git repository exposure (.git/)
-- Common admin paths (/admin, /backup, /config)
-- Default credentials testing
-- SSL/TLS analysis
-- HTTP security headers analysis
+- 5000+ Nuclei vulnerability templates
+- CVE detection and exploitation
+- Information disclosure
+- Misconfigurations
+- Exposed panels and services
+- Default credentials
+- Git/SVN exposure
+- Backup file discovery
+- SSL/TLS vulnerabilities
+- Security headers analysis
+- Automatic template updates
+- Markdown report generation with organized results
 
 Usage:
-    ./webseek.py                           # Basic vulnerability scan
-    ./webseek.py --full                    # Full scan (all checks)
-    ./webseek.py --git                     # Git exposure only
-    ./webseek.py --backup                  # Backup files only
-    ./webseek.py -u admin -p admin         # Test credentials
+    ./webseek-v2.py                        # Full Nuclei scan (all templates)
+    ./webseek-v2.py --severity critical    # Critical issues only
+    ./webseek-v2.py --severity high,critical # High and critical only
+    ./webseek-v2.py --tags cve,exposure    # Specific tags only
+    ./webseek-v2.py --templates custom/    # Custom template directory
+    ./webseek-v2.py --update               # Update Nuclei templates
     
 Output:
-    weblist.txt         - Vulnerable web servers
-    findings.txt        - All findings
-    git_repos.txt       - Exposed git repositories
-    backup_files.txt    - Backup files found
-    web_details.txt     - Detailed findings
-    web_details.json    - JSON export
+    webseek_report/         - Markdown reports organized by template
+    findings.json           - JSON export of all findings
+    findings.txt            - Human-readable findings summary
+    vulnerable_hosts.txt    - List of vulnerable hosts
 """
 
-import socket
 import subprocess
 import sys
 import json
-import re
+import os
 import argparse
-import requests
 import ipaddress
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from datetime import datetime
-from urllib.parse import urljoin
-from urllib3.exceptions import InsecureRequestWarning
+import shutil
 
 # Import shared utilities
-import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from seek_utils import find_ip_list
-
-
-# Disable SSL warnings
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Color codes
 GREEN = '\033[92m'
@@ -61,74 +56,6 @@ MAGENTA = '\033[95m'
 RESET = '\033[0m'
 BOLD = '\033[1m'
 
-# Web ports to scan
-WEB_PORTS = [80, 443, 8000, 8080, 8443, 8888, 9090]
-
-# Common admin/backup paths
-COMMON_PATHS = [
-    '/admin', '/administrator', '/admin.php', '/admin/', '/wp-admin/',
-    '/phpmyadmin', '/pma', '/cpanel', '/webadmin', '/administrator.php',
-    '/backup', '/backups', '/backup.zip', '/backup.tar.gz', '/db_backup',
-    '/config', '/config.php', '/configuration.php', '/settings.php',
-    '/.git', '/.git/config', '/.git/HEAD', '/.svn', '/.hg',
-    '/phpinfo.php', '/info.php', '/test.php', '/debug.php', '/console',
-    '/.env', '/config.json', '/appsettings.json', '/web.config',
-    '/database.yml', '/config.yml', '/settings.yml'
-]
-
-# Backup file extensions
-BACKUP_EXTENSIONS = [
-    '.bak', '.backup', '.old', '.save', '.orig', '.copy',
-    '.zip', '.tar.gz', '.rar', '.7z', '~', '.swp', '.tmp'
-]
-
-# Common files to check for backups
-COMMON_FILES = [
-    'index', 'login', 'admin', 'config', 'database', 'db',
-    'setup', 'install', 'backup', 'home', 'default'
-]
-
-# Info disclosure patterns
-INFO_PATTERNS = {
-    'phpinfo': [
-        'phpinfo()',
-        'PHP Version',
-        'System.*Linux',
-        'Server API'
-    ],
-    'debug': [
-        'Debug Mode',
-        'Stack Trace',
-        'Exception',
-        'Traceback',
-        'Fatal error'
-    ],
-    'directory_listing': [
-        'Index of /',
-        'Parent Directory',
-        '<title>Index of',
-        'Directory Listing'
-    ],
-    'sql_error': [
-        'SQL syntax',
-        'mysql_fetch',
-        'pg_query',
-        'ORA-[0-9]+',
-        'SQLite',
-        'SQLSTATE'
-    ]
-}
-
-# Security headers to check
-SECURITY_HEADERS = [
-    'X-Frame-Options',
-    'X-Content-Type-Options',
-    'X-XSS-Protection',
-    'Strict-Transport-Security',
-    'Content-Security-Policy',
-    'X-Permitted-Cross-Domain-Policies'
-]
-
 # Banner
 BANNER = f"""{CYAN}{BOLD}
 ██╗    ██╗███████╗██████╗ ███████╗███████╗███████╗██╗  ██╗
@@ -138,10 +65,19 @@ BANNER = f"""{CYAN}{BOLD}
 ╚███╔███╔╝███████╗██████╔╝███████║███████╗███████╗██║  ██╗
  ╚══╝╚══╝ ╚══════╝╚═════╝ ╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝
 {RESET}
-{YELLOW}WebSeek v1.0 - Web Vulnerability Scanner{RESET}
-{BLUE}Discover common web security issues{RESET}
+{YELLOW}WebSeek v2.0 - Nuclei-Powered Web Vulnerability Scanner{RESET}
+{BLUE}Smart reporting • 5000+ templates • Report-ready outputs{RESET}
 {GREEN}github.com/Lokii-git/seeksweet{RESET}
 """
+
+# Severity colors
+SEVERITY_COLORS = {
+    'info': BLUE,
+    'low': CYAN,
+    'medium': YELLOW,
+    'high': MAGENTA,
+    'critical': RED
+}
 
 
 def print_banner():
@@ -149,9 +85,49 @@ def print_banner():
     print(BANNER)
 
 
+def check_nuclei():
+    """Check if Nuclei is installed"""
+    try:
+        result = subprocess.run(['nuclei', '-version'], 
+                              capture_output=True, 
+                              text=True,
+                              timeout=5)
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            print(f"{GREEN}[+] Nuclei found: {version}{RESET}")
+            return True
+    except FileNotFoundError:
+        print(f"{RED}[!] Nuclei not found!{RESET}")
+        print(f"{YELLOW}[*] Install with: go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}[!] Error checking Nuclei: {e}{RESET}")
+        return False
+
+
+def update_nuclei_templates():
+    """Update Nuclei templates"""
+    print(f"{YELLOW}[*] Updating Nuclei templates...{RESET}")
+    try:
+        result = subprocess.run(['nuclei', '-update-templates'],
+                              capture_output=True,
+                              text=True,
+                              timeout=300)
+        if result.returncode == 0:
+            print(f"{GREEN}[+] Templates updated successfully{RESET}")
+            print(result.stdout)
+            return True
+        else:
+            print(f"{RED}[!] Template update failed{RESET}")
+            print(result.stderr)
+            return False
+    except Exception as e:
+        print(f"{RED}[!] Error updating templates: {e}{RESET}")
+        return False
+
+
 def read_ip_list(file_path):
     """Read IP addresses or URLs from a file. Supports CIDR notation."""
-    # Use shared utility to find the file
     file_path = find_ip_list(file_path)
     
     targets = []
@@ -176,572 +152,563 @@ def read_ip_list(file_path):
     return targets
 
 
-def check_web_port(ip, port, timeout=3):
-    """Check if a web port is open"""
+def prepare_target_file(ip_file):
+    """Prepare target file for Nuclei (expand CIDR if needed)"""
+    targets = read_ip_list(ip_file)
+    
+    # Create temporary target file
+    temp_file = 'webseek_targets.tmp'
+    with open(temp_file, 'w') as f:
+        for target in targets:
+            # If target doesn't have protocol, add http://
+            if not target.startswith('http'):
+                f.write(f"http://{target}\n")
+                # Also add https version for common ports
+                f.write(f"https://{target}\n")
+            else:
+                f.write(f"{target}\n")
+    
+    print(f"{GREEN}[+] Prepared {len(targets)} targets for scanning{RESET}")
+    return temp_file, len(targets)
+
+
+def run_nuclei_scan(target_file, args):
+    """Run Nuclei scan with specified parameters"""
+    
+    # Create output directory
+    report_dir = 'webseek_report'
+    os.makedirs(report_dir, exist_ok=True)
+    
+    # Build Nuclei command
+    cmd = [
+        'nuclei',
+        '-list', target_file,
+        '-markdown-export', report_dir,
+        '-json-export', 'findings.json',
+        '-stats',
+        '-silent'
+    ]
+    
+    # Add severity filter
+    if args.severity:
+        cmd.extend(['-severity', args.severity])
+    
+    # Add tags filter
+    if args.tags:
+        cmd.extend(['-tags', args.tags])
+    
+    # Add custom templates
+    if args.templates:
+        cmd.extend(['-templates', args.templates])
+    
+    # Add rate limit to be nice to internal networks
+    if args.rate_limit:
+        cmd.extend(['-rate-limit', str(args.rate_limit)])
+    
+    # Add concurrency
+    if args.concurrency:
+        cmd.extend(['-concurrency', str(args.concurrency)])
+    
+    # Add timeout
+    if args.timeout:
+        cmd.extend(['-timeout', str(args.timeout)])
+    
+    # Set environment variable for markdown sorting
+    env = os.environ.copy()
+    env['MARKDOWN_EXPORT_SORT_MODE'] = 'template'
+    
+    print(f"{YELLOW}[*] Starting Nuclei scan...{RESET}")
+    print(f"{BLUE}[*] Command: {' '.join(cmd)}{RESET}")
+    print(f"{CYAN}[*] This may take a while depending on target count and template selection{RESET}\n")
+    
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        result = sock.connect_ex((ip, port))
-        sock.close()
-        return result == 0
-    except:
+        # Run Nuclei scan
+        result = subprocess.run(cmd,
+                              env=env,
+                              capture_output=True,
+                              text=True,
+                              timeout=args.max_scan_time)
+        
+        # Print output
+        if result.stdout:
+            print(result.stdout)
+        
+        if result.returncode == 0:
+            print(f"\n{GREEN}[+] Scan completed successfully{RESET}")
+            return True
+        else:
+            print(f"\n{YELLOW}[!] Scan completed with warnings{RESET}")
+            if result.stderr:
+                print(result.stderr)
+            return True  # Still process results even with warnings
+            
+    except subprocess.TimeoutExpired:
+        print(f"\n{RED}[!] Scan timed out after {args.max_scan_time} seconds{RESET}")
+        return False
+    except Exception as e:
+        print(f"\n{RED}[!] Error running Nuclei: {e}{RESET}")
         return False
 
 
-def check_url(url, timeout=5):
-    """
-    Check if URL is accessible
-    Returns: response object or None
-    """
-    try:
-        response = requests.get(url, timeout=timeout, verify=False, allow_redirects=True)
-        return response
-    except:
+def parse_json_results(json_file):
+    """Parse Nuclei JSON output and generate summary"""
+    if not os.path.exists(json_file):
+        print(f"{YELLOW}[!] No JSON results found at {json_file}{RESET}")
         return None
-
-
-def check_git_exposure(base_url, timeout=5):
-    """
-    Check for exposed .git directory
-    Returns: dict with findings
-    """
+    
     findings = []
-    
-    git_paths = ['/.git/', '/.git/config', '/.git/HEAD', '/.git/index']
-    
-    for path in git_paths:
-        try:
-            url = urljoin(base_url, path)
-            response = requests.get(url, timeout=timeout, verify=False)
-            
-            if response.status_code == 200:
-                findings.append({
-                    'type': 'git_exposure',
-                    'url': url,
-                    'status_code': response.status_code,
-                    'severity': 'HIGH'
-                })
-                
-                # Check for valid git content
-                if path == '/.git/HEAD' and 'ref:' in response.text:
-                    findings.append({
-                        'type': 'git_exposure_confirmed',
-                        'url': url,
-                        'content': response.text[:100],
-                        'severity': 'CRITICAL'
-                    })
-                    break
-        except:
-            continue
-    
-    return findings
-
-
-def check_backup_files(base_url, timeout=5):
-    """
-    Check for backup files
-    Returns: list of backup files found
-    """
-    findings = []
-    
-    # Check common files with backup extensions
-    for filename in COMMON_FILES[:5]:  # Limit to prevent too many requests
-        for ext in BACKUP_EXTENSIONS[:5]:
-            try:
-                url = urljoin(base_url, f'/{filename}{ext}')
-                response = requests.head(url, timeout=timeout, verify=False, allow_redirects=False)
-                
-                if response.status_code == 200:
-                    findings.append({
-                        'type': 'backup_file',
-                        'url': url,
-                        'status_code': response.status_code,
-                        'size': response.headers.get('Content-Length', 'Unknown'),
-                        'severity': 'MEDIUM'
-                    })
-            except:
-                continue
-    
-    return findings
-
-
-def check_info_disclosure(base_url, timeout=5):
-    """
-    Check for information disclosure
-    Returns: list of findings
-    """
-    findings = []
-    
-    info_paths = ['/phpinfo.php', '/info.php', '/test.php', '/debug.php', '/']
-    
-    for path in info_paths:
-        try:
-            url = urljoin(base_url, path)
-            response = requests.get(url, timeout=timeout, verify=False)
-            
-            if response.status_code == 200:
-                content = response.text[:10000]  # First 10KB
-                
-                # Check for patterns
-                for info_type, patterns in INFO_PATTERNS.items():
-                    for pattern in patterns:
-                        if re.search(pattern, content, re.IGNORECASE):
-                            findings.append({
-                                'type': info_type,
-                                'url': url,
-                                'pattern': pattern,
-                                'severity': 'HIGH' if info_type == 'phpinfo' else 'MEDIUM'
-                            })
-                            break  # One match per type is enough
-        except:
-            continue
-    
-    return findings
-
-
-def check_common_paths(base_url, timeout=5):
-    """
-    Check common admin/config paths
-    Returns: list of accessible paths
-    """
-    findings = []
-    
-    for path in COMMON_PATHS[:15]:  # Limit requests
-        try:
-            url = urljoin(base_url, path)
-            response = requests.get(url, timeout=timeout, verify=False, allow_redirects=False)
-            
-            if response.status_code in [200, 301, 302, 401, 403]:
-                severity = 'HIGH' if response.status_code == 200 else 'MEDIUM'
-                
-                # 401/403 means path exists but requires auth
-                if response.status_code in [401, 403]:
-                    severity = 'LOW'
-                
-                findings.append({
-                    'type': 'common_path',
-                    'url': url,
-                    'status_code': response.status_code,
-                    'severity': severity
-                })
-        except:
-            continue
-    
-    return findings
-
-
-def check_security_headers(base_url, timeout=5):
-    """
-    Check for missing security headers
-    Returns: dict with header status
-    """
-    missing_headers = []
-    
     try:
-        response = requests.get(base_url, timeout=timeout, verify=False)
-        
-        for header in SECURITY_HEADERS:
-            if header not in response.headers:
-                missing_headers.append(header)
-        
-        if missing_headers:
-            return {
-                'type': 'missing_security_headers',
-                'url': base_url,
-                'missing_headers': missing_headers,
-                'severity': 'LOW'
-            }
-    except:
-        pass
-    
-    return None
-
-
-def test_default_credentials(base_url, username, password, timeout=5):
-    """
-    Test default credentials on common login paths
-    Returns: list of successful logins
-    """
-    findings = []
-    
-    login_paths = [
-        '/login', '/admin/login', '/wp-login.php', '/administrator',
-        '/admin.php', '/user/login'
-    ]
-    
-    for path in login_paths:
-        try:
-            url = urljoin(base_url, path)
-            
-            # Try POST request with credentials
-            data = {
-                'username': username,
-                'password': password,
-                'user': username,
-                'pass': password,
-                'login': 'Login'
-            }
-            
-            response = requests.post(url, data=data, timeout=timeout, verify=False, allow_redirects=False)
-            
-            # Check for successful login indicators
-            if response.status_code in [200, 302, 303]:
-                # Look for success indicators
-                if 'dashboard' in response.text.lower() or 'logout' in response.text.lower():
-                    findings.append({
-                        'type': 'default_credentials',
-                        'url': url,
-                        'username': username,
-                        'password': password,
-                        'severity': 'CRITICAL'
-                    })
-        except:
-            continue
+        with open(json_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    finding = json.loads(line)
+                    findings.append(finding)
+    except Exception as e:
+        print(f"{RED}[!] Error parsing JSON results: {e}{RESET}")
+        return None
     
     return findings
 
 
-def scan_web_server(target, args):
+def extract_ip(host):
+    """Extract IP address from host URL"""
+    import re
+    # Try to extract IP from URL
+    ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', host)
+    if ip_match:
+        return ip_match.group(1)
+    return host
+
+
+def group_findings_by_vuln(findings):
     """
-    Scan a single web server
-    Returns: dict with findings
+    Group findings by vulnerability type with affected IPs
+    Returns dict: {template_id: {info: ..., ips: [...], findings: [...]}}
     """
-    result = {
-        'target': target,
-        'accessible_urls': [],
-        'findings': [],
-        'status': 'unreachable'
+    vuln_groups = {}
+    
+    for finding in findings:
+        template_id = finding.get('template-id', 'unknown')
+        host = finding.get('host', '')
+        ip = extract_ip(host)
+        
+        if template_id not in vuln_groups:
+            vuln_groups[template_id] = {
+                'info': finding.get('info', {}),
+                'ips': set(),
+                'findings': []
+            }
+        
+        vuln_groups[template_id]['ips'].add(ip)
+        vuln_groups[template_id]['findings'].append(finding)
+    
+    # Convert sets to sorted lists
+    for template_id in vuln_groups:
+        vuln_groups[template_id]['ips'] = sorted(list(vuln_groups[template_id]['ips']))
+    
+    return vuln_groups
+
+
+def generate_critical_report(vuln_groups, output_file='CRITICAL_FINDINGS.txt'):
+    """Generate report for critical and high severity findings only"""
+    critical_vulns = {k: v for k, v in vuln_groups.items() 
+                     if v['info'].get('severity', '').lower() in ['critical', 'high']}
+    
+    if not critical_vulns:
+        print(f"{GREEN}[+] No critical or high severity findings!{RESET}")
+        return
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write("="*80 + "\n")
+        f.write("CRITICAL AND HIGH SEVERITY FINDINGS - PRIORITY FOR REPORT\n")
+        f.write("="*80 + "\n\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Total Critical/High Vulnerabilities: {len(critical_vulns)}\n\n")
+        
+        # Sort by severity (critical first) then by number of affected hosts
+        severity_order = {'critical': 0, 'high': 1}
+        sorted_vulns = sorted(critical_vulns.items(), 
+                            key=lambda x: (
+                                severity_order.get(x[1]['info'].get('severity', 'high').lower(), 2),
+                                -len(x[1]['ips'])  # More hosts first
+                            ))
+        
+        for idx, (template_id, data) in enumerate(sorted_vulns, 1):
+            info = data['info']
+            severity = info.get('severity', 'unknown').upper()
+            name = info.get('name', 'Unknown Vulnerability')
+            description = info.get('description', 'No description available')
+            ips = data['ips']
+            
+            f.write("="*80 + "\n")
+            f.write(f"[{idx}] [{severity}] {name}\n")
+            f.write("="*80 + "\n\n")
+            
+            f.write(f"Template ID: {template_id}\n")
+            f.write(f"Affected Hosts: {len(ips)}\n\n")
+            
+            # Write IP list
+            f.write("AFFECTED SYSTEMS:\n")
+            f.write("-" * 40 + "\n")
+            for ip in ips:
+                f.write(f"  • {ip}\n")
+            f.write("\n")
+            
+            # Description
+            f.write("DESCRIPTION:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"{description}\n\n")
+            
+            # CVE/CWE if available
+            if 'cve-id' in info:
+                f.write(f"CVE ID: {info['cve-id']}\n")
+            if 'cwe-id' in info:
+                cwe_id = info['cwe-id']
+                if isinstance(cwe_id, list):
+                    cwe_id = ', '.join(cwe_id)
+                f.write(f"CWE ID: {cwe_id}\n")
+            
+            # CVSS Score
+            if 'cvss-score' in info:
+                f.write(f"CVSS Score: {info['cvss-score']}\n")
+            
+            # References
+            references = info.get('reference', [])
+            if references:
+                f.write("\nREFERENCES:\n")
+                f.write("-" * 40 + "\n")
+                if isinstance(references, list):
+                    for ref in references:
+                        f.write(f"  • {ref}\n")
+                else:
+                    f.write(f"  • {references}\n")
+            
+            f.write("\n\n")
+    
+    print(f"{GREEN}[+] Critical findings report saved to: {output_file}{RESET}")
+
+
+def generate_vuln_summary_by_severity(vuln_groups):
+    """Generate individual files for each severity level with grouped vulnerabilities"""
+    
+    severity_files = {
+        'critical': 'CRITICAL_VULNS.txt',
+        'high': 'HIGH_VULNS.txt', 
+        'medium': 'MEDIUM_VULNS.txt',
+        'low': 'LOW_VULNS.txt',
+        'info': 'INFO_VULNS.txt'
     }
     
-    try:
-        # Determine if target is IP or URL
-        if target.startswith('http://') or target.startswith('https://'):
-            urls_to_check = [target]
-        else:
-            # Check common ports
-            urls_to_check = []
-            for port in WEB_PORTS:
-                if check_web_port(target, port, timeout=args.timeout):
-                    protocol = 'https' if port in [443, 8443] else 'http'
-                    port_suffix = '' if port in [80, 443] else f':{port}'
-                    urls_to_check.append(f'{protocol}://{target}{port_suffix}')
+    for severity, filename in severity_files.items():
+        severity_vulns = {k: v for k, v in vuln_groups.items() 
+                         if v['info'].get('severity', '').lower() == severity}
         
-        # Scan each accessible URL
-        for url in urls_to_check:
-            response = check_url(url, timeout=args.timeout)
+        if not severity_vulns:
+            continue
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("="*80 + "\n")
+            f.write(f"{severity.upper()} SEVERITY FINDINGS\n")
+            f.write("="*80 + "\n\n")
+            f.write(f"Total {severity.upper()} vulnerabilities: {len(severity_vulns)}\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             
-            if response:
-                result['accessible_urls'].append(url)
-                result['status'] = 'accessible'
+            # Sort by number of affected hosts (most affected first)
+            sorted_vulns = sorted(severity_vulns.items(), 
+                                key=lambda x: -len(x[1]['ips']))
+            
+            for idx, (template_id, data) in enumerate(sorted_vulns, 1):
+                info = data['info']
+                name = info.get('name', 'Unknown')
+                ips = data['ips']
                 
-                # Run checks
-                if args.full or args.git:
-                    git_findings = check_git_exposure(url, timeout=args.timeout)
-                    result['findings'].extend(git_findings)
-                
-                if args.full or args.backup:
-                    backup_findings = check_backup_files(url, timeout=args.timeout)
-                    result['findings'].extend(backup_findings)
-                
-                if args.full or not (args.git or args.backup):
-                    info_findings = check_info_disclosure(url, timeout=args.timeout)
-                    result['findings'].extend(info_findings)
-                    
-                    path_findings = check_common_paths(url, timeout=args.timeout)
-                    result['findings'].extend(path_findings)
-                    
-                    header_check = check_security_headers(url, timeout=args.timeout)
-                    if header_check:
-                        result['findings'].append(header_check)
-                
-                # Test credentials if provided
-                if args.username and args.password:
-                    cred_findings = test_default_credentials(url, args.username, args.password, timeout=args.timeout)
-                    result['findings'].extend(cred_findings)
+                f.write(f"[{idx}] {name}\n")
+                f.write("-" * 80 + "\n")
+                f.write(f"Template: {template_id}\n")
+                f.write(f"Affected Hosts ({len(ips)}): {', '.join(ips)}\n")
+                f.write("\n")
+        
+        print(f"{CYAN}[+] {severity.upper()} findings saved to: {filename}{RESET}")
+
+
+def generate_ip_to_vuln_report(vuln_groups, output_file='IP_TO_VULNS.txt'):
+    """Generate report showing vulnerabilities per IP address"""
     
-    except KeyboardInterrupt:
-        raise
-    except Exception as e:
-        result['error'] = str(e)
+    # Invert the mapping: IP -> list of vulnerabilities
+    ip_to_vulns = {}
     
-    return result
-
-
-def save_weblist(results, filename='weblist.txt'):
-    """Save list of vulnerable web servers"""
-    try:
-        with open(filename, 'w') as f:
-            for result in results:
-                if result['findings']:
-                    for url in result['accessible_urls']:
-                        f.write(f"{url}\n")
-        print(f"{GREEN}[+] Vulnerable web servers saved to: {filename}{RESET}")
-    except Exception as e:
-        print(f"{RED}[!] Error saving web list: {e}{RESET}")
-
-
-def save_findings(results, filename='findings.txt'):
-    """Save all findings"""
-    try:
-        with open(filename, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("WEBSEEK - Web Vulnerability Findings\n")
-            f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 80 + "\n\n")
-            
-            for result in results:
-                if result['findings']:
-                    f.write(f"\n{'=' * 80}\n")
-                    f.write(f"Target: {result['target']}\n")
-                    f.write(f"{'=' * 80}\n\n")
-                    
-                    # Group by severity
-                    critical = [f for f in result['findings'] if f.get('severity') == 'CRITICAL']
-                    high = [f for f in result['findings'] if f.get('severity') == 'HIGH']
-                    medium = [f for f in result['findings'] if f.get('severity') == 'MEDIUM']
-                    low = [f for f in result['findings'] if f.get('severity') == 'LOW']
-                    
-                    if critical:
-                        f.write("CRITICAL Findings:\n")
-                        for finding in critical:
-                            f.write(f"  🔴 {finding['type']}: {finding.get('url', 'N/A')}\n")
-                            if 'username' in finding:
-                                f.write(f"     Credentials: {finding['username']}:{finding['password']}\n")
-                        f.write("\n")
-                    
-                    if high:
-                        f.write("HIGH Findings:\n")
-                        for finding in high:
-                            f.write(f"  🟠 {finding['type']}: {finding.get('url', 'N/A')}\n")
-                        f.write("\n")
-                    
-                    if medium:
-                        f.write("MEDIUM Findings:\n")
-                        for finding in medium[:10]:  # Limit output
-                            f.write(f"  🟡 {finding['type']}: {finding.get('url', 'N/A')}\n")
-                        if len(medium) > 10:
-                            f.write(f"  ... and {len(medium) - 10} more\n")
-                        f.write("\n")
-                    
-                    if low:
-                        f.write(f"LOW Findings: {len(low)}\n\n")
+    for template_id, data in vuln_groups.items():
+        info = data['info']
+        severity = info.get('severity', 'unknown').lower()
+        name = info.get('name', 'Unknown')
         
-        print(f"{GREEN}[+] Findings saved to: {filename}{RESET}")
-    except Exception as e:
-        print(f"{RED}[!] Error saving findings: {e}{RESET}")
-
-
-def save_git_repos(results, filename='git_repos.txt'):
-    """Save exposed git repositories"""
-    try:
-        with open(filename, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("WEBSEEK - Exposed Git Repositories\n")
-            f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 80 + "\n\n")
-            f.write("Use git-dumper to download:\n")
-            f.write("  git-dumper http://target/.git/ output_dir\n\n")
-            
-            for result in results:
-                git_findings = [f for f in result['findings'] if 'git' in f.get('type', '')]
-                if git_findings:
-                    for finding in git_findings:
-                        f.write(f"{finding['url']}\n")
+        for ip in data['ips']:
+            if ip not in ip_to_vulns:
+                ip_to_vulns[ip] = []
+            ip_to_vulns[ip].append({
+                'template_id': template_id,
+                'name': name,
+                'severity': severity
+            })
+    
+    # Sort IPs by number of vulnerabilities (most vulnerable first)
+    sorted_ips = sorted(ip_to_vulns.items(), key=lambda x: -len(x[1]))
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write("="*80 + "\n")
+        f.write("VULNERABILITIES BY IP ADDRESS\n")
+        f.write("="*80 + "\n\n")
+        f.write(f"Total Vulnerable Hosts: {len(ip_to_vulns)}\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
-        print(f"{GREEN}[+] Git repositories saved to: {filename}{RESET}")
-    except Exception as e:
-        print(f"{RED}[!] Error saving git repos: {e}{RESET}")
-
-
-def save_backup_files(results, filename='backup_files.txt'):
-    """Save backup files found"""
-    try:
-        with open(filename, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("WEBSEEK - Backup Files Found\n")
-            f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 80 + "\n\n")
+        for ip, vulns in sorted_ips:
+            # Count by severity
+            severity_counts = {}
+            for v in vulns:
+                sev = v['severity']
+                severity_counts[sev] = severity_counts.get(sev, 0) + 1
             
-            for result in results:
-                backup_findings = [f for f in result['findings'] if f.get('type') == 'backup_file']
-                if backup_findings:
-                    f.write(f"\nTarget: {result['target']}\n")
-                    f.write(f"{'=' * 80}\n")
-                    for finding in backup_findings:
-                        f.write(f"  {finding['url']} (Size: {finding.get('size', 'Unknown')})\n")
-        
-        print(f"{GREEN}[+] Backup files saved to: {filename}{RESET}")
-    except Exception as e:
-        print(f"{RED}[!] Error saving backup files: {e}{RESET}")
-
-
-def save_details(results, filename='web_details.txt'):
-    """Save detailed scan results"""
-    try:
-        with open(filename, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("WEBSEEK - Detailed Scan Results\n")
-            f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 80 + "\n\n")
+            f.write("="*80 + "\n")
+            f.write(f"HOST: {ip}\n")
+            f.write("="*80 + "\n")
+            f.write(f"Total Vulnerabilities: {len(vulns)}\n")
             
-            for result in results:
-                if result['status'] == 'accessible':
-                    f.write(f"\n{'=' * 80}\n")
-                    f.write(f"Target: {result['target']}\n")
-                    f.write(f"Accessible URLs: {len(result['accessible_urls'])}\n")
-                    for url in result['accessible_urls']:
-                        f.write(f"  • {url}\n")
-                    f.write(f"Findings: {len(result['findings'])}\n")
-                    f.write(f"{'=' * 80}\n")
-                    
-                    # Count by severity
-                    critical = len([f for f in result['findings'] if f.get('severity') == 'CRITICAL'])
-                    high = len([f for f in result['findings'] if f.get('severity') == 'HIGH'])
-                    medium = len([f for f in result['findings'] if f.get('severity') == 'MEDIUM'])
-                    low = len([f for f in result['findings'] if f.get('severity') == 'LOW'])
-                    
-                    f.write(f"Severity breakdown:\n")
-                    f.write(f"  CRITICAL: {critical}\n")
-                    f.write(f"  HIGH: {high}\n")
-                    f.write(f"  MEDIUM: {medium}\n")
-                    f.write(f"  LOW: {low}\n\n")
+            # Show severity breakdown
+            f.write("Severity Breakdown: ")
+            sev_parts = []
+            for sev in ['critical', 'high', 'medium', 'low', 'info']:
+                if sev in severity_counts:
+                    sev_parts.append(f"{sev.upper()}: {severity_counts[sev]}")
+            f.write(", ".join(sev_parts) + "\n\n")
+            
+            # Sort vulnerabilities by severity
+            severity_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4}
+            sorted_vulns = sorted(vulns, key=lambda x: severity_order.get(x['severity'], 5))
+            
+            f.write("VULNERABILITIES:\n")
+            f.write("-" * 80 + "\n")
+            for idx, vuln in enumerate(sorted_vulns, 1):
+                f.write(f"{idx:3d}. [{vuln['severity'].upper()}] {vuln['name']}\n")
+                f.write(f"     Template: {vuln['template_id']}\n")
+            f.write("\n")
+    
+    print(f"{CYAN}[+] IP-to-vulnerability mapping saved to: {output_file}{RESET}")
+
+
+def generate_summary(findings):
+    """Generate human-readable summary of findings"""
+    if not findings:
+        print(f"{GREEN}[+] No vulnerabilities found!{RESET}")
+        return
+    
+    # Count by severity
+    severity_counts = {}
+    vulnerable_hosts = set()
+    templates_triggered = set()
+    
+    for finding in findings:
+        severity = finding.get('info', {}).get('severity', 'unknown').lower()
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
         
-        print(f"{GREEN}[+] Detailed results saved to: {filename}{RESET}")
-    except Exception as e:
-        print(f"{RED}[!] Error saving details: {e}{RESET}")
-
-
-def save_json(results, filename='web_details.json'):
-    """Save results as JSON"""
-    try:
-        with open(filename, 'w') as f:
-            json.dump(results, f, indent=2)
-        print(f"{GREEN}[+] JSON results saved to: {filename}{RESET}")
-    except Exception as e:
-        print(f"{RED}[!] Error saving JSON: {e}{RESET}")
+        host = finding.get('host', '')
+        if host:
+            ip = extract_ip(host)
+            vulnerable_hosts.add(ip)
+        
+        template_id = finding.get('template-id', '')
+        if template_id:
+            templates_triggered.add(template_id)
+    
+    # Group findings by vulnerability
+    vuln_groups = group_findings_by_vuln(findings)
+    
+    # Print summary
+    print(f"\n{BOLD}{CYAN}{'='*60}{RESET}")
+    print(f"{BOLD}{CYAN}SCAN SUMMARY{RESET}")
+    print(f"{BOLD}{CYAN}{'='*60}{RESET}\n")
+    
+    print(f"{BOLD}Total Findings:{RESET} {len(findings)}")
+    print(f"{BOLD}Unique Vulnerabilities:{RESET} {len(vuln_groups)}")
+    print(f"{BOLD}Vulnerable Hosts:{RESET} {len(vulnerable_hosts)}")
+    print(f"{BOLD}Templates Triggered:{RESET} {len(templates_triggered)}\n")
+    
+    print(f"{BOLD}Findings by Severity:{RESET}")
+    for severity in ['critical', 'high', 'medium', 'low', 'info']:
+        count = severity_counts.get(severity, 0)
+        if count > 0:
+            color = SEVERITY_COLORS.get(severity, RESET)
+            print(f"  {color}[{severity.upper()}]{RESET} {count}")
+    
+    # Generate smart reports
+    print(f"\n{YELLOW}[*] Generating smart reports for pentest documentation...{RESET}")
+    
+    # Critical/High priority report
+    generate_critical_report(vuln_groups)
+    
+    # Severity-based reports
+    generate_vuln_summary_by_severity(vuln_groups)
+    
+    # IP-to-vulnerability mapping
+    generate_ip_to_vuln_report(vuln_groups)
+    
+    # Write findings summary (legacy format)
+    with open('findings.txt', 'w', encoding='utf-8') as f:
+        f.write("="*60 + "\n")
+        f.write("WEBSEEK V2 SCAN RESULTS\n")
+        f.write("="*60 + "\n\n")
+        f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Total Findings: {len(findings)}\n")
+        f.write(f"Vulnerable Hosts: {len(vulnerable_hosts)}\n\n")
+        
+        f.write("Findings by Severity:\n")
+        for severity in ['critical', 'high', 'medium', 'low', 'info']:
+            count = severity_counts.get(severity, 0)
+            if count > 0:
+                f.write(f"  [{severity.upper()}] {count}\n")
+        
+        f.write("\n" + "="*60 + "\n")
+        f.write("DETAILED FINDINGS\n")
+        f.write("="*60 + "\n\n")
+        
+        # Sort findings by severity (critical first)
+        severity_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4}
+        sorted_findings = sorted(findings, 
+                                key=lambda x: severity_order.get(
+                                    x.get('info', {}).get('severity', 'info').lower(), 5))
+        
+        for finding in sorted_findings:
+            info = finding.get('info', {})
+            severity = info.get('severity', 'unknown').upper()
+            name = info.get('name', 'Unknown')
+            template_id = finding.get('template-id', '')
+            host = finding.get('host', '')
+            matched_at = finding.get('matched-at', '')
+            
+            f.write(f"[{severity}] {name}\n")
+            f.write(f"  Template: {template_id}\n")
+            f.write(f"  Host: {host}\n")
+            if matched_at:
+                f.write(f"  URL: {matched_at}\n")
+            
+            # Add description if available
+            description = info.get('description', '')
+            if description:
+                f.write(f"  Description: {description}\n")
+            
+            # Add reference if available
+            reference = info.get('reference', [])
+            if reference:
+                f.write(f"  References: {', '.join(reference) if isinstance(reference, list) else reference}\n")
+            
+            f.write("\n")
+    
+    # Write vulnerable hosts list
+    with open('vulnerable_hosts.txt', 'w', encoding='utf-8') as f:
+        for host in sorted(vulnerable_hosts):
+            f.write(f"{host}\n")
+    
+    print(f"\n{BOLD}{GREEN}{'='*60}{RESET}")
+    print(f"{BOLD}{GREEN}REPORT FILES GENERATED{RESET}")
+    print(f"{BOLD}{GREEN}{'='*60}{RESET}")
+    print(f"\n{CYAN}📋 For Report Writing:{RESET}")
+    print(f"  {RED}• CRITICAL_FINDINGS.txt{RESET}     - Priority vulnerabilities with affected IPs")
+    print(f"  {MAGENTA}• HIGH_VULNS.txt{RESET}             - High severity issues grouped")
+    print(f"  {YELLOW}• MEDIUM_VULNS.txt{RESET}           - Medium severity issues grouped")
+    
+    print(f"\n{CYAN}🔍 Detailed Analysis:{RESET}")
+    print(f"  • IP_TO_VULNS.txt           - Vulnerabilities per host (most vulnerable first)")
+    print(f"  • LOW_VULNS.txt             - Low severity findings")
+    print(f"  • INFO_VULNS.txt            - Informational findings")
+    
+    print(f"\n{CYAN}📊 Standard Output:{RESET}")
+    print(f"  • findings.txt              - Complete findings list")
+    print(f"  • findings.json             - JSON export")
+    print(f"  • vulnerable_hosts.txt      - Simple IP list")
+    print(f"  • webseek_report/           - Nuclei markdown reports (organized by template)")
+    
+    print(f"\n{YELLOW}💡 Tip: Start with CRITICAL_FINDINGS.txt for your pentest report!{RESET}\n")
 
 
 def main():
+    """Main function"""
     parser = argparse.ArgumentParser(
-        description='WebSeek - Web Vulnerability Scanner',
+        description='WebSeek v2.0 - Nuclei-Powered Web Vulnerability Scanner',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ./webseek.py iplist.txt                        # Basic scan
-  ./webseek.py iplist.txt --full                 # Full scan (all checks)
-  ./webseek.py iplist.txt --git                  # Git exposure only
-  ./webseek.py iplist.txt --backup               # Backup files only
-  ./webseek.py iplist.txt -u admin -p admin      # Test default credentials
-  ./webseek.py urls.txt -w 20                    # Fast scan (20 workers)
+  %(prog)s                              # Full scan with all templates
+  %(prog)s --severity critical,high     # Only critical and high severity
+  %(prog)s --tags cve,exposure          # Only CVEs and exposures
+  %(prog)s --templates custom/          # Use custom template directory
+  %(prog)s --update                     # Update Nuclei templates
+  %(prog)s --rate-limit 150             # Limit to 150 requests/second
         """
     )
     
-    parser.add_argument('input_file', help='File containing IPs or URLs')
-    parser.add_argument('--full', action='store_true', help='Full scan (all checks)')
-    parser.add_argument('--git', action='store_true', help='Check for .git exposure only')
-    parser.add_argument('--backup', action='store_true', help='Check for backup files only')
-    parser.add_argument('-u', '--username', help='Username for credential testing')
-    parser.add_argument('-p', '--password', help='Password for credential testing')
-    parser.add_argument('-w', '--workers', type=int, default=10, help='Number of concurrent workers (default: 10)')
-    parser.add_argument('--timeout', type=int, default=5, help='Request timeout (default: 5)')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    parser.add_argument('ip_file', nargs='?', default='iplist.txt',
+                       help='File containing IP addresses or URLs (supports CIDR)')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                       help='Verbose output (compatibility flag, always verbose)')
+    parser.add_argument('--severity', '-s', 
+                       help='Filter by severity (critical,high,medium,low,info)')
+    parser.add_argument('--tags', '-t',
+                       help='Filter by tags (cve,exposure,panel,default-login,etc)')
+    parser.add_argument('--templates', '-tp',
+                       help='Custom template directory or file')
+    parser.add_argument('--rate-limit', '-rl', type=int, default=150,
+                       help='Rate limit (requests per second, default: 150)')
+    parser.add_argument('--concurrency', '-c', type=int, default=25,
+                       help='Concurrency level (default: 25)')
+    parser.add_argument('--timeout', type=int, default=10,
+                       help='Timeout per request in seconds (default: 10)')
+    parser.add_argument('--max-scan-time', type=int, default=3600,
+                       help='Maximum scan time in seconds (default: 3600)')
+    parser.add_argument('--update', '-u', action='store_true',
+                       help='Update Nuclei templates before scanning')
+    parser.add_argument('--skip-update', action='store_true',
+                       help='Skip automatic template update check')
     
     args = parser.parse_args()
     
     print_banner()
     
-    # Read targets
-    targets = read_ip_list(args.input_file)
-    
-    if not targets:
-        print(f"{RED}[!] No targets to scan{RESET}")
+    # Check if Nuclei is installed
+    if not check_nuclei():
         sys.exit(1)
     
-    print(f"{CYAN}[*] Starting web vulnerability scan...{RESET}")
-    print(f"{CYAN}[*] Targets: {len(targets)}{RESET}")
-    print(f"{CYAN}[*] Workers: {args.workers}{RESET}")
-    print(f"{CYAN}[*] Mode: {'Full' if args.full else 'Git only' if args.git else 'Backup only' if args.backup else 'Standard'}{RESET}")
-    print()
+    # Update templates if requested
+    if args.update:
+        if not update_nuclei_templates():
+            print(f"{YELLOW}[!] Template update failed, continuing anyway...{RESET}")
+    elif not args.skip_update:
+        print(f"{BLUE}[*] Tip: Use --update to update Nuclei templates{RESET}")
     
-    results = []
-    
+    # Prepare target file
     try:
-        with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            future_to_target = {executor.submit(scan_web_server, target, args): target for target in targets}
-            
-            for future in as_completed(future_to_target):
-                target = future_to_target[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    
-                    if result['findings']:
-                        critical = len([f for f in result['findings'] if f.get('severity') == 'CRITICAL'])
-                        high = len([f for f in result['findings'] if f.get('severity') == 'HIGH'])
-                        
-                        severity_label = f"{RED}[CRITICAL]{RESET}" if critical > 0 else f"{YELLOW}[HIGH]{RESET}" if high > 0 else f"{BLUE}[VULN]{RESET}"
-                        
-                        msg = f"{severity_label} {target}"
-                        if critical > 0:
-                            msg += f" - {critical} CRITICAL"
-                        if high > 0:
-                            msg += f" - {high} HIGH"
-                        
-                        print(msg)
-                    
-                    elif args.verbose:
-                        print(f"{BLUE}[*]{RESET} {target} - No findings")
-                
-                except KeyboardInterrupt:
-                    print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-                except Exception as e:
-                    if args.verbose:
-                        print(f"{RED}[!]{RESET} {target} - Error: {e}")
+        target_file, target_count = prepare_target_file(args.ip_file)
+    except Exception as e:
+        print(f"{RED}[!] Error preparing targets: {e}{RESET}")
+        sys.exit(1)
     
-    except KeyboardInterrupt:
-        print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")
-    
-    # Print summary
-    print(f"\n{CYAN}{'=' * 80}{RESET}")
-    print(f"{CYAN}Scan Complete{RESET}")
-    print(f"{CYAN}{'=' * 80}{RESET}")
-    
-    vuln_servers = len([r for r in results if r['findings']])
-    total_findings = sum(len(r['findings']) for r in results)
-    critical_findings = sum(len([f for f in r['findings'] if f.get('severity') == 'CRITICAL']) for r in results)
-    high_findings = sum(len([f for f in r['findings'] if f.get('severity') == 'HIGH']) for r in results)
-    
-    print(f"Vulnerable servers: {vuln_servers}/{len(targets)}")
-    print(f"Total findings: {total_findings}")
-    print(f"  CRITICAL: {critical_findings}")
-    print(f"  HIGH: {high_findings}")
-    
-    # Save results
-    if results:
-        save_weblist(results)
-        if total_findings > 0:
-            save_findings(results)
+    # Run scan
+    try:
+        success = run_nuclei_scan(target_file, args)
         
-        # Save specific findings
-        git_count = sum(len([f for f in r['findings'] if 'git' in f.get('type', '')]) for r in results)
-        backup_count = sum(len([f for f in r['findings'] if f.get('type') == 'backup_file']) for r in results)
+        if success:
+            # Parse and summarize results
+            findings = parse_json_results('findings.json')
+            if findings is not None:
+                generate_summary(findings)
         
-        if git_count > 0:
-            save_git_repos(results)
-        if backup_count > 0:
-            save_backup_files(results)
-        
-        save_details(results)
-        save_json(results)
+    finally:
+        # Cleanup temp file
+        if os.path.exists(target_file):
+            os.remove(target_file)
     
-    print(f"\n{GREEN}[+] Scan complete!{RESET}")
+    print(f"\n{CYAN}{'='*60}{RESET}")
+    print(f"{GREEN}[+] WebSeek v2 scan complete!{RESET}")
+    print(f"{CYAN}{'='*60}{RESET}\n")
 
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        print(f"\n{YELLOW}[!] Interrupted by user{RESET}")
-        sys.exit(0)
+    main()
