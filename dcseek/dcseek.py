@@ -155,6 +155,65 @@ def check_dns_srv_records(ip: str) -> List[str]:
     return srv_records
 
 
+def check_smb_signing(ip: str, timeout: int = 5) -> Dict:
+    """
+    Check SMB signing status using crackmapexec.
+    
+    Args:
+        ip: Target IP address
+        timeout: Command timeout in seconds
+        
+    Returns:
+        Dict with signing status
+    """
+    result = {
+        'signing_enabled': False,
+        'signing_required': False,
+        'relay_vulnerable': False,
+        'error': None
+    }
+    
+    try:
+        # Use crackmapexec to check SMB signing
+        cmd = ['crackmapexec', 'smb', ip, '--gen-relay-list', 'temp_relay_dc.txt']
+        
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        
+        output = proc.stdout + proc.stderr
+        
+        # Parse output for signing status
+        if 'signing:False' in output.lower():
+            result['signing_enabled'] = False
+            result['signing_required'] = False
+            result['relay_vulnerable'] = True
+        elif 'signing:True' in output.lower():
+            result['signing_enabled'] = True
+            # Check if required or just enabled
+            if 'signing required' not in output.lower():
+                result['signing_required'] = False
+                result['relay_vulnerable'] = True
+            else:
+                result['signing_required'] = True
+                result['relay_vulnerable'] = False
+        
+        # Clean up temp file
+        if os.path.exists('temp_relay_dc.txt'):
+            os.remove('temp_relay_dc.txt')
+        
+    except subprocess.TimeoutExpired:
+        result['error'] = 'Timeout'
+    except FileNotFoundError:
+        result['error'] = 'crackmapexec not found'
+    except Exception as e:
+        result['error'] = str(e)
+    
+    return result
+
 def scan_host(ip: str, timeout: float = 1.0) -> Optional[dict]:
     """Scan a single host for DC indicators"""
     try:
@@ -164,6 +223,7 @@ def scan_host(ip: str, timeout: float = 1.0) -> Optional[dict]:
             'open_ports': {},
             'is_likely_dc': False,
             'srv_records': [],
+            'smb_signing': None,
             'error': None
         }
         
@@ -196,6 +256,13 @@ def scan_host(ip: str, timeout: float = 1.0) -> Optional[dict]:
                     result['srv_records'] = check_dns_srv_records(ip)
                 except Exception as e:
                     pass
+            
+            # Check SMB signing status (CRITICAL for DCs)
+            if 445 in open_dc_ports:
+                try:
+                    result['smb_signing'] = check_smb_signing(ip, timeout=5)
+                except Exception as e:
+                    result['smb_signing'] = {'error': str(e)}
         
         return result
     except Exception as e:
@@ -376,6 +443,73 @@ def run_enum4linux(ip: str, output_dir: str = "enum4linux_results") -> Optional[
         print(f"[!] Error running enum4linux on {ip}: {e}")
         return None
 
+
+def save_dc_smb_status(domain_controllers: List[Dict], filename: str = "dc_smb_status.txt"):
+    """Save DC SMB signing status report - CRITICAL for identifying relay vulnerabilities"""
+    try:
+        relay_vulnerable = [dc for dc in domain_controllers if dc.get('smb_signing') and dc['smb_signing'].get('relay_vulnerable')]
+        signing_required = [dc for dc in domain_controllers if dc.get('smb_signing') and dc['smb_signing'].get('signing_required')]
+        
+        with open(filename, 'w') as f:
+            f.write("=" * 70 + "\n")
+            f.write("DOMAIN CONTROLLER SMB SIGNING STATUS\n")
+            f.write("=" * 70 + "\n\n")
+            
+            f.write(f"Total Domain Controllers: {len(domain_controllers)}\n")
+            f.write(f"Relay Vulnerable (CRITICAL): {len(relay_vulnerable)}\n")
+            f.write(f"Signing Required (Protected): {len(signing_required)}\n\n")
+            
+            if relay_vulnerable:
+                f.write("=" * 70 + "\n")
+                f.write("⚠⚠⚠ RELAY VULNERABLE DOMAIN CONTROLLERS ⚠⚠⚠\n")
+                f.write("=" * 70 + "\n\n")
+                f.write("These DCs do not require SMB signing and are vulnerable to relay attacks!\n")
+                f.write("This is a CRITICAL security misconfiguration.\n\n")
+                
+                for dc in relay_vulnerable:
+                    f.write(f"IP: {dc['ip']}\n")
+                    f.write(f"Hostname: {dc.get('hostname', 'N/A')}\n")
+                    if dc.get('smb_signing') and dc['smb_signing'].get('signing_enabled'):
+                        f.write("Status: Signing ENABLED but NOT REQUIRED (still vulnerable)\n")
+                    else:
+                        f.write("Status: Signing DISABLED\n")
+                    f.write("\n")
+                
+                f.write("=" * 70 + "\n")
+                f.write("RECOMMENDED REMEDIATION\n")
+                f.write("=" * 70 + "\n\n")
+                f.write("1. Enable SMB signing requirement on all Domain Controllers:\n")
+                f.write("   Group Policy: Computer Configuration > Policies > Windows Settings >\n")
+                f.write("   Security Settings > Local Policies > Security Options\n")
+                f.write("   Set: 'Microsoft network server: Digitally sign communications (always)' to Enabled\n\n")
+                f.write("2. Or via PowerShell:\n")
+                f.write("   Set-SmbServerConfiguration -RequireSecuritySignature $true -Force\n\n")
+                f.write("3. Restart SMB service or reboot for changes to take effect\n\n")
+            
+            if signing_required:
+                f.write("=" * 70 + "\n")
+                f.write("✓ PROTECTED DOMAIN CONTROLLERS\n")
+                f.write("=" * 70 + "\n\n")
+                f.write("These DCs properly require SMB signing.\n\n")
+                
+                for dc in signing_required:
+                    f.write(f"IP: {dc['ip']}\n")
+                    f.write(f"Hostname: {dc.get('hostname', 'N/A')}\n")
+                    f.write("Status: Signing REQUIRED (Protected)\n\n")
+            
+            f.write("=" * 70 + "\n")
+            f.write("REFERENCES\n")
+            f.write("=" * 70 + "\n\n")
+            f.write("• https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/overview-server-message-block-signing\n")
+            f.write("• https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-347a\n")
+            f.write("• https://attack.mitre.org/techniques/T1557/001/\n\n")
+        
+        print(f"[+] DC SMB status saved to: {filename}")
+        return True
+        
+    except Exception as e:
+        print(f"[!] Error saving DC SMB status: {e}")
+        return False
 
 def save_dclist(domain_controllers: List[Dict], filename: str = "dclist.txt"):
     """Save discovered DCs to dclist.txt"""
@@ -574,6 +708,17 @@ Examples:
                             print(f"    Open DC Ports: {', '.join([f'{p} ({s})' for p, s in result['open_ports'].items()])}")
                             if result['srv_records']:
                                 print(f"    DNS SRV Records: {', '.join(result['srv_records'])}")
+                            
+                            # Show SMB signing status (CRITICAL for DCs)
+                            if result.get('smb_signing'):
+                                signing = result['smb_signing']
+                                if signing.get('relay_vulnerable'):
+                                    print(f"    ⚠⚠⚠ SMB SIGNING: DISABLED/NOT REQUIRED - RELAY VULNERABLE! ⚠⚠⚠")
+                                elif signing.get('signing_required'):
+                                    print(f"    ✓ SMB SIGNING: REQUIRED (Protected)")
+                                elif signing.get('error'):
+                                    print(f"    SMB Signing Check: Error - {signing['error']}")
+                            
                             print()
                         elif args.verbose and result['open_ports']:
                             print(f"[-] {result['ip']}: Open ports {list(result['open_ports'].keys())} (not a DC)")
@@ -601,16 +746,32 @@ Examples:
         print(f"Errors encountered: {errors}")
     
     if domain_controllers:
+        # Check for relay-vulnerable DCs (CRITICAL!)
+        relay_vulnerable_dcs = []
+        for dc in domain_controllers:
+            if dc.get('smb_signing') and dc['smb_signing'].get('relay_vulnerable'):
+                relay_vulnerable_dcs.append(dc)
+        
+        if relay_vulnerable_dcs:
+            print(f"\n{'⚠'*35}")
+            print(f"CRITICAL: {len(relay_vulnerable_dcs)} DOMAIN CONTROLLER(S) VULNERABLE TO SMB RELAY!")
+            print(f"{'⚠'*35}")
+            for dc in relay_vulnerable_dcs:
+                print(f"  {dc['ip']:<15} | {dc['hostname']}")
+        
         print("\nDOMAIN CONTROLLERS:")
         print("-"*70)
         for dc in domain_controllers:
-            print(f"  {dc['ip']:<15} | {dc['hostname']}")
+            relay_str = " [RELAY VULNERABLE]" if dc in relay_vulnerable_dcs else ""
+            print(f"  {dc['ip']:<15} | {dc['hostname']}{relay_str}")
     else:
         print("\n[!] No Domain Controllers detected")
     
     # Save DC list to dclist.txt
     if domain_controllers and not args.enum_only:
         save_dclist(domain_controllers, args.dclist)
+        # Save SMB signing status report
+        save_dc_smb_status(domain_controllers)
     
     # Save detailed results
     if domain_controllers and not args.enum_only:
@@ -631,6 +792,16 @@ Examples:
                         f.write(f"Open Ports: {', '.join([f'{p} ({s})' for p, s in dc['open_ports'].items()])}\n")
                     if dc.get('srv_records'):
                         f.write(f"DNS SRV Records: {', '.join(dc['srv_records'])}\n")
+                    
+                    # SMB Signing status (CRITICAL for DCs)
+                    if dc.get('smb_signing'):
+                        signing = dc['smb_signing']
+                        if signing.get('relay_vulnerable'):
+                            f.write("⚠⚠⚠ SMB SIGNING: DISABLED/NOT REQUIRED - RELAY VULNERABLE ⚠⚠⚠\n")
+                        elif signing.get('signing_required'):
+                            f.write("✓ SMB SIGNING: REQUIRED (Protected)\n")
+                        elif signing.get('error'):
+                            f.write(f"SMB Signing Check Error: {signing['error']}\n")
                     f.write("\n" + "-"*70 + "\n\n")
             print(f"\n[*] Results saved to: {args.output}")
         except PermissionError:

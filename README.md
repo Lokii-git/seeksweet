@@ -2,12 +2,25 @@
 
 **A Sweet Suite of Network Reconnaissance Tools**
 
-SeekSweet is an orchestrated collection of 14 specialized penetration testing tools designed for comprehensive Active Directory and network reconnaissance. Each tool focuses on a specific attack surface, providing deep enumeration and vulnerability assessment capabilities.
+SeekSweet is an orchestrated collection of **16 specialized penetration testing tools** designed for comprehensive Active Directory and network reconnaissance. Each tool focuses on a specific attack surface, providing deep enumeration and vulnerability assessment capabilities.
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.1-blue)
 ![Python](https://img.shields.io/badge/python-3.8%2B-green)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-orange)
+
+## ✨ What's New in v1.1
+
+**Major Enhancements - October 2025:**
+
+- 🔥 **SMB Relay Detection** - SMBSeek and DCSeek now detect SMB signing status for relay attacks
+- 🔐 **LAPS Detection** - LDAPSeek identifies readable LAPS passwords
+- 👥 **Enhanced Delegation** - Comprehensive unconstrained/constrained/RBCD detection
+- 🎫 **Kerberos Cracking Guide** - Full hashcat/john guide with GPU time estimates
+- 🩸 **BloodSeek** - NEW! BloodHound collection wrapper (11 collection methods)
+- 🔒 **SSLSeek** - NEW! SSL/TLS vulnerability scanner wrapper (testssl.sh)
+- 🗝️ **GPP Password Extraction** - Enhanced CredSeek with MS14-025 exploitation guide
+- 📚 **10 Attack Guides** - Comprehensive exploitation guides auto-generated
 
 ## 🎯 Features
 
@@ -22,14 +35,14 @@ SeekSweet is an orchestrated collection of 14 specialized penetration testing to
 ## 🛠️ The Tools
 
 ### 🔍 Discovery Phase (CRITICAL)
-1. **DCSeek** - Domain Controller discovery and enumeration
-2. **LDAPSeek** - Active Directory LDAP enumeration (users, groups, SPNs)
-3. **SMBSeek** - SMB share discovery and enumeration
+1. **DCSeek** - Domain Controller discovery and enumeration + **SMB Signing Detection** 🆕
+2. **LDAPSeek** - Active Directory LDAP enumeration + **LAPS Detection** + **Enhanced Delegation** + **Password Policy** 🆕
+3. **SMBSeek** - SMB share discovery and enumeration + **SMB Relay Target Identification** 🆕
 4. **ShareSeek** - Deep share analysis with permissions
 
 ### 🔐 Authentication Phase (HIGH)
-5. **KerbSeek** - Kerberos service enumeration and Kerberoasting
-6. **CredSeek** - Credential store and password vault discovery
+5. **KerbSeek** - Kerberos service enumeration and Kerberoasting + **Hash Cracking Guide** 🆕
+6. **CredSeek** - Credential store and password vault discovery + **GPP Password Extraction** 🆕
 
 ### 🚪 Access Phase (MEDIUM)
 7. **WinRMSeek** - Windows Remote Management endpoint discovery
@@ -44,8 +57,10 @@ SeekSweet is an orchestrated collection of 14 specialized penetration testing to
 12. **PrintSeek** - Print server and printer enumeration
 13. **SNMPSeek** - SNMP service discovery and device enumeration
 
-### 🎯 Assessment Phase (HIGH)
+### 🎯 Assessment Phase (CRITICAL/HIGH)
 14. **VulnSeek** - Comprehensive vulnerability scanning
+15. **BloodSeek** 🆕 - BloodHound collection wrapper with complete AD attack path analysis
+16. **SSLSeek** 🆕 - SSL/TLS security scanner (Heartbleed, POODLE, DROWN, weak ciphers, etc.)
 
 ## 🚀 Quick Start
 
@@ -91,7 +106,136 @@ python dcseek.py -f ../iplist.txt -v
 
 cd ../ldapseek
 python ldapseek.py ../iplist.txt -v
+
+# New tools
+cd ../bloodseek
+python bloodseek.py -d DOMAIN.LOCAL -u user -p password -dc 10.10.10.10 --method All
+
+cd ../sslseek
+python sslseek.py target.com --full
 ```
+
+## 🔥 Key Features Explained
+
+### SMB Relay Attack Detection
+**Tools: SMBSeek, DCSeek**
+
+Automatically identifies systems vulnerable to NTLM relay attacks:
+```bash
+# SMBSeek detects SMB signing on all hosts
+python smbseek.py iplist.txt -v
+
+# Output includes:
+# - smb_relay_targets.txt (hosts with signing disabled)
+# - SMB_ATTACK_GUIDE.txt (ntlmrelayx commands)
+
+# DCSeek focuses on Domain Controllers (critical!)
+python dcseek.py -f iplist.txt -v
+# - dc_smb_status.txt shows DC signing status
+```
+
+**Why it matters**: Unsigned SMB allows credential relay → Instant Domain Admin if DC is unsigned!
+
+### LAPS Password Discovery
+**Tool: LDAPSeek**
+
+Identifies systems with readable LAPS passwords:
+```bash
+python ldapseek.py iplist.txt -u 'DOMAIN\user' -p 'password' -v
+
+# Output includes:
+# - laps_readable.txt (systems with LAPS passwords you can read)
+# - LAPS_ATTACK_GUIDE.txt (extraction techniques)
+```
+
+**Why it matters**: LAPS passwords are local admin creds → Instant local admin access!
+
+### Delegation Vulnerability Detection
+**Tool: LDAPSeek**
+
+Comprehensive delegation detection (unconstrained, constrained, RBCD):
+```bash
+python ldapseek.py iplist.txt -u 'DOMAIN\user' -p 'password' -v
+
+# Output includes:
+# - delegation_targets.txt (vulnerable accounts/computers)
+# - DELEGATION_ATTACK_GUIDE.txt (Rubeus exploitation commands)
+```
+
+**Why it matters**: Delegation vulnerabilities can lead to Domain Admin via S4U2Self/S4U2Proxy attacks!
+
+### Password Policy Extraction
+**Tool: LDAPSeek**
+
+Extracts domain password policy for safe password spraying:
+```bash
+python ldapseek.py iplist.txt -u 'DOMAIN\user' -p 'password' -v
+
+# Output includes:
+# - password_policy.txt (lockout threshold, complexity requirements)
+# - USERS_ATTACK_GUIDE.txt (safe password spray commands)
+```
+
+**Why it matters**: Avoid account lockouts! Guide respects lockout policy and suggests safe spray timing.
+
+### Kerberos Hash Cracking
+**Tool: KerbSeek**
+
+Enhanced hash output with cracking time estimates:
+```bash
+python kerbseek.py iplist.txt -u 'DOMAIN\user' -p 'password' -v
+
+# Output includes:
+# - spns.txt (Kerberoastable accounts)
+# - asrep_users.txt (ASREPRoastable accounts)
+# - KERBEROS_ATTACK_GUIDE.txt (hashcat/john commands + GPU timing)
+```
+
+**Why it matters**: Know if cracking is feasible before wasting time! Guide includes optimal hashcat parameters.
+
+### GPP Password Extraction
+**Tool: CredSeek**
+
+Exploit MS14-025 vulnerability in Group Policy Preferences:
+```bash
+python credseek.py --gpp dclist.txt -v
+
+# Output includes:
+# - cred_details.txt (found GPP passwords)
+# - GPP_ATTACK_GUIDE.txt (decryption methods, automated tools)
+```
+
+**Why it matters**: GPP passwords often grant local admin → Massive lateral movement opportunity!
+
+### BloodHound Collection
+**Tool: BloodSeek** 🆕
+
+Wrapper for BloodHound-Python with comprehensive guide:
+```bash
+python bloodseek.py -d DOMAIN.LOCAL -u user -p password -dc 10.10.10.10 --method All
+
+# Output includes:
+# - *.json files (BloodHound data for Neo4j import)
+# - bloodlist.txt (collection summary)
+# - BLOODHOUND_GUIDE.txt (complete setup and analysis workflow)
+```
+
+**Why it matters**: Visualize AD attack paths, identify privilege escalation routes, find quick wins!
+
+### SSL/TLS Vulnerability Scanning
+**Tool: SSLSeek** 🆕
+
+Wrapper for testssl.sh to detect SSL/TLS vulnerabilities:
+```bash
+python sslseek.py target.com --full
+
+# Output includes:
+# - ssllist.txt (vulnerability summary)
+# - testssl_*.json (detailed results)
+# - SSL_ATTACK_GUIDE.txt (exploitation techniques)
+```
+
+**Why it matters**: Detect Heartbleed, POODLE, DROWN, weak ciphers, certificate issues!
 
 ## 📊 Menu System
 
@@ -110,23 +254,47 @@ python ldapseek.py ../iplist.txt -v
  7. WinRMSeek [MEDIUM]               14. VulnSeek [HIGH]
 ```
 
-## 📝 Output Files
+## � Attack Guides (NEW!)
+
+SeekSweet now auto-generates **comprehensive exploitation guides** with each tool:
+
+| Guide File | Tool | Content | Lines |
+|------------|------|---------|-------|
+| `SMB_ATTACK_GUIDE.txt` | SMBSeek | ntlmrelayx commands, Responder integration, relay chains | ~400 |
+| `LAPS_ATTACK_GUIDE.txt` | LDAPSeek | LAPS extraction, PyLAPSdumper, crackmapexec techniques | ~450 |
+| `DELEGATION_ATTACK_GUIDE.txt` | LDAPSeek | Unconstrained/constrained/RBCD exploitation, Rubeus commands | ~600 |
+| `USERS_ATTACK_GUIDE.txt` | LDAPSeek | Password spraying with lockout policy respect, kerbrute | ~350 |
+| `KERBEROS_ATTACK_GUIDE.txt` | KerbSeek | Hash cracking (hashcat/john), GPU time estimates, rules | ~500 |
+| `GPP_ATTACK_GUIDE.txt` | CredSeek | MS14-025 exploitation, gpp-decrypt, manual decryption | ~650 |
+| `BLOODHOUND_GUIDE.txt` | BloodSeek | BloodHound-Python, SharpHound, Neo4j setup, Cypher queries | ~600 |
+| `SSL_ATTACK_GUIDE.txt` | SSLSeek | Heartbleed, POODLE, DROWN, cipher attacks, certificate issues | ~700 |
+
+**Total: 10 comprehensive guides covering AD attacks, network exploitation, and cryptographic vulnerabilities**
+
+## �📝 Output Files
 
 Each tool generates standardized output:
 
 - `*list.txt` - Simple list of discovered hosts/services
 - `*_details.txt` - Detailed findings with context
 - `*_details.json` - Machine-readable JSON export (when available)
+- `*_ATTACK_GUIDE.txt` 🆕 - Step-by-step exploitation instructions
 
 **Example for LDAPSeek:**
 ```
-ldaplist.txt          - Domain controllers found
-users.txt             - Enumerated usernames
-spns.txt              - Kerberoastable accounts
-asrep_users.txt       - ASREPRoastable accounts
-admin_users.txt       - Administrative accounts
-ldap_details.txt      - Full detailed output
-ldap_details.json     - JSON export
+ldaplist.txt                - Domain controllers found
+users.txt                   - Enumerated usernames  
+spns.txt                    - Kerberoastable accounts
+asrep_users.txt             - ASREPRoastable accounts
+admin_users.txt             - Administrative accounts
+laps_readable.txt           🆕 - LAPS-enabled systems with readable passwords
+delegation_targets.txt      🆕 - Delegation vulnerabilities found
+password_policy.txt         🆕 - Domain password policy details
+ldap_details.txt            - Full detailed output
+ldap_details.json           - JSON export
+LAPS_ATTACK_GUIDE.txt       🆕 - LAPS exploitation guide
+DELEGATION_ATTACK_GUIDE.txt 🆕 - Delegation attack techniques
+USERS_ATTACK_GUIDE.txt      🆕 - Password spray guide (respects lockout!)
 ```
 
 ## 🎓 Recommended Workflow

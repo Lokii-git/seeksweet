@@ -55,6 +55,9 @@ tmp/
 webseek/test_smart_reports.py
 logs/
 
+# Documentation (organized in docs/ folder)
+# Keep only README.md in root
+
 # Environment
 venv/
 env/

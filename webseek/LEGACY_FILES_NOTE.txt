@@ -1,0 +1,44 @@
+# Legacy Files Location
+
+The legacy WebSeek v1 files have been removed from the GitHub repository but are preserved locally.
+
+## Local Files (Not in GitHub)
+
+Located in: `webseek/`
+
+- **webseek-v1-legacy.py** - Original custom scanner (~750 lines)
+- **README-v1-legacy.md** - Original documentation
+
+These files are excluded via `.gitignore` patterns:
+- `*-v1-legacy.py`
+- `*-legacy.md`
+
+## Why Removed from GitHub?
+
+- Reduces repository clutter
+- Main version is now Nuclei-powered (webseek.py)
+- Legacy version preserved locally for reference only
+- Most users should use the new v2.0
+
+## If You Need the Legacy Version
+
+The legacy files are:
+1. **Available locally** in the webseek directory
+2. **In git history** before commit ab9ac90 (if you need to recover them)
+3. **Documented** in README-v1-legacy.md (local only)
+
+## To Use Legacy Version
+
+```bash
+cd webseek
+python webseek-v1-legacy.py iplist.txt -v
+```
+
+## Recommended: Use Current Version
+
+```bash
+cd webseek
+python webseek.py  # New Nuclei-powered version
+```
+
+The current version (v2.0) is superior in every way except it requires Nuclei to be installed.

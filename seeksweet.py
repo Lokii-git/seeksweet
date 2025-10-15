@@ -71,10 +71,11 @@ SEEK_TOOLS = [
         'script': 'dcseek/dcseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Find Domain Controllers and enumerate domain info',
-        'why': 'Start here - identifies the domain infrastructure',
-        'outputs': ['dclist.txt'],
-        'typical_args': 'iplist.txt -v'
+        'description': 'Find Domain Controllers + DC SMB Signing vulnerabilities',
+        'why': 'Start here - identifies DCs and critical relay vulnerabilities',
+        'outputs': ['dclist.txt', 'dc_smb_status.txt'],
+        'typical_args': 'iplist.txt -v',
+        'new_features': 'DC SMB signing detection (CRITICAL vulnerability check)'
     },
     {
         'id': 2,
@@ -82,11 +83,12 @@ SEEK_TOOLS = [
         'script': 'ldapseek/ldapseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Enumerate AD via LDAP (optional: auth for more data)',
-        'why': 'Essential for finding user accounts and domain structure',
-        'outputs': ['ldaplist.txt', 'ldap_details.txt', 'ldap_details.json'],
-        'typical_args': 'iplist.txt -v',
-        'optional_creds': True
+        'description': 'Enumerate AD via LDAP + LAPS + Delegation + Password Policy',
+        'why': 'Essential for users, LAPS passwords, delegation, weak policies',
+        'outputs': ['ldaplist.txt', 'users.txt', 'laps_readable.txt', 'delegation_targets.txt', 'password_policy.txt', 'LAPS_ATTACK_GUIDE.txt', 'DELEGATION_ATTACK_GUIDE.txt', 'USERS_ATTACK_GUIDE.txt'],
+        'typical_args': 'iplist.txt --full -v',
+        'optional_creds': True,
+        'new_features': 'LAPS detection, enhanced delegation (unconstrained/constrained/RBCD), password policy extraction'
     },
     {
         'id': 3,
@@ -94,10 +96,11 @@ SEEK_TOOLS = [
         'script': 'smbseek/smbseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Find SMB shares and accessible resources',
-        'why': 'Critical for finding accessible file shares and sensitive data',
-        'outputs': ['smblist.txt', 'sharelist.txt', 'smb_details.txt'],
-        'typical_args': 'iplist.txt -v'
+        'description': 'Find SMB shares + SMB Relay vulnerabilities',
+        'why': 'Critical for shares, sensitive data, and SMB relay attacks',
+        'outputs': ['smblist.txt', 'sharelist.txt', 'smb_relay_targets.txt', 'SMB_ATTACK_GUIDE.txt'],
+        'typical_args': 'iplist.txt -v',
+        'new_features': 'SMB signing detection, relay target identification'
     },
     {
         'id': 4,
@@ -116,11 +119,12 @@ SEEK_TOOLS = [
         'script': 'kerbseek/kerbseek.py',
         'priority': 'HIGH',
         'phase': 'Authentication',
-        'description': 'Find Kerberos services (requires domain creds)',
-        'why': 'Identify Kerberoastable accounts and service principals',
-        'outputs': ['kerblist.txt', 'kerb_details.txt', 'kerb_details.json'],
+        'description': 'Kerberoasting + ASREPRoasting with cracking guide',
+        'why': 'Extract hashes, get comprehensive cracking strategies',
+        'outputs': ['kerblist.txt', 'tgs_hashes.txt', 'asrep_hashes.txt', 'KERBEROS_ATTACK_GUIDE.txt'],
         'typical_args': 'iplist.txt -v',
-        'needs_creds': True
+        'needs_creds': True,
+        'new_features': 'Comprehensive hash cracking guide with GPU time estimates'
     },
     {
         'id': 6,
@@ -128,10 +132,11 @@ SEEK_TOOLS = [
         'script': 'credseek/credseek.py',
         'priority': 'HIGH',
         'phase': 'Authentication',
-        'description': 'Find credential stores and password vaults',
-        'why': 'Locate stored credentials and password managers',
-        'outputs': ['credlist.txt', 'cred_details.txt', 'cred_details.json'],
-        'typical_args': 'iplist.txt -v'
+        'description': 'Find credential stores, password vaults, and GPP passwords [ENHANCED!]',
+        'why': 'Locate stored credentials, password managers, and exploit MS14-025 GPP vulnerability',
+        'outputs': ['credlist.txt', 'cred_details.txt', 'cred_details.json', 'GPP_ATTACK_GUIDE.txt'],
+        'typical_args': 'iplist.txt --deep -v (or --gpp dclist.txt for GPP extraction)',
+        'new_features': 'GPP password extraction with comprehensive exploitation guide including manual decryption, automated tools, and post-exploitation strategies'
     },
     {
         'id': 7,
@@ -139,10 +144,11 @@ SEEK_TOOLS = [
         'script': 'winrmseek/winrmseek.py',
         'priority': 'MEDIUM',
         'phase': 'Access',
-        'description': 'Find WinRM endpoints (optional: test creds)',
-        'why': 'Identify remote administration access points',
-        'outputs': ['winrmlist.txt', 'winrm_details.txt', 'winrm_details.json'],
-        'typical_args': 'iplist.txt -v',
+        'description': 'Find WinRM endpoints and test connections [ENHANCED!]',
+        'why': 'Identify remote administration access points with connection validation',
+        'outputs': ['winrmlist.txt', 'winrm_access.txt', 'winrm_details.txt', 'winrm_details.json', 'WINRM_ATTACK_GUIDE.txt'],
+        'typical_args': 'iplist.txt -t -u user -p pass -v',
+        'new_features': 'Real connection testing with command execution (whoami, hostname, systeminfo), enhanced access list with connection commands, comprehensive WinRM exploitation guide',
         'optional_creds': True
     },
     {
@@ -185,10 +191,11 @@ SEEK_TOOLS = [
         'script': 'backupseek/backupseek.py',
         'priority': 'MEDIUM',
         'phase': 'Services',
-        'description': 'Find backup systems and infrastructure',
-        'why': 'Locate backup servers - often contain full system images',
+        'description': 'Find backup systems and NAS infrastructure [ENHANCED!]',
+        'why': 'Locate backup servers and NAS devices - often contain full system images and backups',
         'outputs': ['backuplist.txt', 'backup_details.txt', 'backup_details.json'],
-        'typical_args': 'iplist.txt -v'
+        'typical_args': 'iplist.txt -v',
+        'new_features': 'NAS detection (Synology, QNAP, TrueNAS, Netgear, Buffalo) with web interface enumeration'
     },
     {
         'id': 12,
@@ -222,6 +229,31 @@ SEEK_TOOLS = [
         'why': 'Final assessment - comprehensive CVE detection with 10+ nmap checks and Nuclei CVE templates',
         'outputs': ['CRITICAL_VULNS.txt', 'vulnlist.txt', 'vuln_details.json', 'nuclei_cve_results/'],
         'typical_args': '-f iplist.txt --full --nuclei -v'
+    },
+    {
+        'id': 15,
+        'name': 'BloodSeek',
+        'script': 'bloodseek/bloodseek.py',
+        'priority': 'CRITICAL',
+        'phase': 'Assessment',
+        'description': 'BloodHound collection wrapper with comprehensive AD attack guide [NEW!]',
+        'why': 'Essential for Active Directory attack path analysis and privilege escalation mapping',
+        'outputs': ['bloodlist.txt', 'BLOODHOUND_GUIDE.txt', '*.json (BloodHound data)'],
+        'typical_args': '-d DOMAIN.LOCAL -u user -p password -dc 10.10.10.10 --method All',
+        'needs_creds': True,
+        'new_features': 'Complete BloodHound wrapper with 11 collection methods, Neo4j setup guide, custom Cypher queries, edge exploitation guide'
+    },
+    {
+        'id': 16,
+        'name': 'SSLSeek',
+        'script': 'sslseek/sslseek.py',
+        'priority': 'HIGH',
+        'phase': 'Services',
+        'description': 'SSL/TLS security scanner wrapper with comprehensive vulnerability guide [NEW!]',
+        'why': 'Identify SSL/TLS misconfigurations, weak ciphers, and critical vulnerabilities (Heartbleed, POODLE, etc.)',
+        'outputs': ['ssllist.txt', 'SSL_ATTACK_GUIDE.txt', 'testssl_*.json'],
+        'typical_args': 'target.com --full',
+        'new_features': 'testssl.sh wrapper covering 10+ critical vulnerabilities, cipher analysis, certificate validation, and exploitation strategies'
     }
 ]
 
@@ -282,17 +314,24 @@ def format_tool_lines(tool, show_details):
     status = f" {GREEN}✓ {BOLD}COMPLETE{RESET}" if tool['id'] in completed_scans else ""
     priority_color = get_priority_color(tool['priority'])
     
+    # NEW indicator for enhanced tools
+    new_indicator = f" {MAGENTA}[NEW!]{RESET}" if tool.get('new_features') else ""
+    
     # Main line
-    lines.append(f"  {BOLD}{tool['id']:2d}.{RESET} {BOLD}{tool['name']}{RESET} {priority_color}[{tool['priority']}]{RESET}{status}")
-    lines.append(f"      {tool['description'][:52]}")
+    lines.append(f"  {BOLD}{tool['id']:2d}.{RESET} {BOLD}{tool['name']}{RESET} {priority_color}[{tool['priority']}]{RESET}{new_indicator}{status}")
+    lines.append(f"      {tool['description'][:65]}")
+    
+    # Show new features if present
+    if tool.get('new_features'):
+        lines.append(f"      {MAGENTA}✨ NEW:{RESET} {tool['new_features'][:60]}")
     
     # Optional details
     if show_details:
-        lines.append(f"      {YELLOW}Why:{RESET} {tool['why'][:52]}")
+        lines.append(f"      {YELLOW}Why:{RESET} {tool['why'][:60]}")
     
     # Output location if completed
     if tool['id'] in completed_scans and tool['id'] in scan_outputs:
-        lines.append(f"      {GREEN}Output:{RESET} {scan_outputs[tool['id']][:50]}")
+        lines.append(f"      {GREEN}Output:{RESET} {scan_outputs[tool['id']][:55]}")
     
     return lines
 
@@ -301,7 +340,11 @@ def print_menu(show_details=False):
     """Print the main menu with two-column layout - phases in columns"""
     print(f"\n{BOLD}{'='*120}{RESET}")
     print(f"{BOLD}{CYAN}SEEKSWEET MENU - Select a Tool to Run{RESET}")
-    print(f"{BOLD}{'='*120}{RESET}\n")
+    print(f"{BOLD}{'='*120}{RESET}")
+    
+    # Highlight new features
+    print(f"{MAGENTA}{BOLD}✨ NEW FEATURES ADDED:{RESET} SMB Relay Detection, LAPS Enumeration, Enhanced Delegation, Password Policy, Kerberos Cracking Guide")
+    print(f"{MAGENTA}   Tools enhanced: DCSeek, SMBSeek, LDAPSeek, KerbSeek - Look for {MAGENTA}[NEW!]{RESET} tags below\n")
     
     # Group by phase
     phases = {}
@@ -441,8 +484,30 @@ def run_seek_tool(tool, target_file=None):
     elif tool['name'] in ['LDAPSeek', 'WinRMSeek']:
         # LDAPSeek and WinRMSeek with optional credentials (positional arg)
         cmd.extend([target_file, '-v'])
-        if username and password:
-            cmd.extend(['-u', username, '-p', password])
+        
+        # For WinRMSeek, prompt for credentials if not provided
+        if tool['name'] == 'WinRMSeek':
+            if not username or not password:
+                print(f"{YELLOW}[*] WinRMSeek can test connections with credentials{RESET}")
+                test_creds = input(f"{CYAN}Do you want to test WinRM connections? (y/n): {RESET}").strip().lower()
+                
+                if test_creds == 'y':
+                    if not username:
+                        username = input(f"{CYAN}Username: {RESET}").strip()
+                    if not password:
+                        import getpass
+                        password = getpass.getpass(f"{CYAN}Password: {RESET}")
+                    
+                    if username and password:
+                        cmd.extend(['-t', '-u', username, '-p', password])
+                        print(f"{GREEN}[+] Will test connections with provided credentials{RESET}")
+            else:
+                # Credentials already provided, add connection testing flag
+                cmd.extend(['-t', '-u', username, '-p', password])
+        else:
+            # LDAPSeek
+            if username and password:
+                cmd.extend(['-u', username, '-p', password])
     else:
         # Tools that use positional argument
         cmd.extend([target_file, '-v'])
@@ -625,11 +690,37 @@ def view_results_summary():
     
     for tool in SEEK_TOOLS:
         if tool['id'] in completed_scans:
-            print(f"{GREEN}[✓]{RESET} {BOLD}{tool['name']}{RESET}")
+            new_indicator = f" {MAGENTA}[ENHANCED!]{RESET}" if tool.get('new_features') else ""
+            print(f"{GREEN}[✓]{RESET} {BOLD}{tool['name']}{RESET}{new_indicator}")
             print(f"    Completed: {completed_scans[tool['id']]}")
             if tool['id'] in scan_outputs:
                 print(f"    Output: {scan_outputs[tool['id']]}")
+            
+            # List expected output files (including new ones)
+            if tool.get('outputs'):
+                print(f"    Expected Files: {', '.join(tool['outputs'][:5])}")
+                if len(tool['outputs']) > 5:
+                    print(f"                    {', '.join(tool['outputs'][5:])}")
+            
+            # Highlight new features
+            if tool.get('new_features'):
+                print(f"    {MAGENTA}✨ New:{RESET} {tool['new_features']}")
+            
             print()
+    
+    # Show new attack guides available
+    new_guides = []
+    for tool in SEEK_TOOLS:
+        if tool['id'] in completed_scans and tool.get('new_features'):
+            for output in tool.get('outputs', []):
+                if 'GUIDE' in output.upper():
+                    new_guides.append(output)
+    
+    if new_guides:
+        print(f"{MAGENTA}{BOLD}✨ NEW ATTACK GUIDES GENERATED:{RESET}")
+        for guide in set(new_guides):
+            print(f"   • {guide}")
+        print()
     
     print(f"{CYAN}{BOLD}{'='*80}{RESET}\n")
 

