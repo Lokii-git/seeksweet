@@ -82,10 +82,11 @@ SEEK_TOOLS = [
         'script': 'ldapseek/ldapseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Enumerate users, groups, and AD objects via LDAP',
+        'description': 'Enumerate AD via LDAP (optional: auth for more data)',
         'why': 'Essential for finding user accounts and domain structure',
         'outputs': ['ldaplist.txt', 'ldap_details.txt', 'ldap_details.json'],
-        'typical_args': 'iplist.txt -v'
+        'typical_args': 'iplist.txt -v',
+        'optional_creds': True
     },
     {
         'id': 3,
@@ -93,7 +94,7 @@ SEEK_TOOLS = [
         'script': 'smbseek/smbseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Find SMB shares and enumerate accessible resources',
+        'description': 'Find SMB shares and accessible resources',
         'why': 'Critical for finding accessible file shares and sensitive data',
         'outputs': ['smblist.txt', 'sharelist.txt', 'smb_details.txt'],
         'typical_args': 'iplist.txt -v'
@@ -115,10 +116,11 @@ SEEK_TOOLS = [
         'script': 'kerbseek/kerbseek.py',
         'priority': 'HIGH',
         'phase': 'Authentication',
-        'description': 'Find Kerberos services and enumerate SPNs',
+        'description': 'Find Kerberos services (requires domain creds)',
         'why': 'Identify Kerberoastable accounts and service principals',
         'outputs': ['kerblist.txt', 'kerb_details.txt', 'kerb_details.json'],
-        'typical_args': 'iplist.txt -v'
+        'typical_args': 'iplist.txt -v',
+        'needs_creds': True
     },
     {
         'id': 6,
@@ -137,10 +139,11 @@ SEEK_TOOLS = [
         'script': 'winrmseek/winrmseek.py',
         'priority': 'MEDIUM',
         'phase': 'Access',
-        'description': 'Find Windows Remote Management endpoints',
+        'description': 'Find WinRM endpoints (optional: test creds)',
         'why': 'Identify remote administration access points',
         'outputs': ['winrmlist.txt', 'winrm_details.txt', 'winrm_details.json'],
-        'typical_args': 'iplist.txt -v'
+        'typical_args': 'iplist.txt -v',
+        'optional_creds': True
     },
     {
         'id': 8,
@@ -148,7 +151,7 @@ SEEK_TOOLS = [
         'script': 'webseek/webseek.py',
         'priority': 'HIGH',
         'phase': 'Web',
-        'description': 'Nuclei-powered web vulnerability scanner with 5000+ templates',
+        'description': 'Nuclei web vuln scanner (5000+ templates)',
         'why': 'Comprehensive web security scanning with smart reporting',
         'outputs': ['CRITICAL_FINDINGS.txt', 'findings.json', 'webseek_report/', 'IP_TO_VULNS.txt'],
         'typical_args': 'iplist.txt -v'
@@ -170,10 +173,11 @@ SEEK_TOOLS = [
         'script': 'dbseek/dbseek.py',
         'priority': 'MEDIUM',
         'phase': 'Services',
-        'description': 'Find database servers and enumerate instances',
+        'description': 'Find database servers (optional: test creds)',
         'why': 'Identify database servers for potential data extraction',
         'outputs': ['dblist.txt', 'db_creds.txt', 'db_details.txt'],
-        'typical_args': 'iplist.txt -v'
+        'typical_args': 'iplist.txt -v',
+        'optional_creds': True
     },
     {
         'id': 11,
@@ -214,7 +218,7 @@ SEEK_TOOLS = [
         'script': 'vulnseek/vulnseek.py',
         'priority': 'HIGH',
         'phase': 'Assessment',
-        'description': 'Multi-method vulnerability scanner (Nmap + Nuclei CVEs + Metasploit detection)',
+        'description': 'Multi-method vuln scanner (Nmap/Nuclei/Metasploit)',
         'why': 'Final assessment - comprehensive CVE detection with 10+ nmap checks and Nuclei CVE templates',
         'outputs': ['CRITICAL_VULNS.txt', 'vulnlist.txt', 'vuln_details.json', 'nuclei_cve_results/'],
         'typical_args': '-f iplist.txt --full --nuclei -v'
@@ -280,15 +284,15 @@ def format_tool_lines(tool, show_details):
     
     # Main line
     lines.append(f"  {BOLD}{tool['id']:2d}.{RESET} {BOLD}{tool['name']}{RESET} {priority_color}[{tool['priority']}]{RESET}{status}")
-    lines.append(f"      {tool['description'][:48]}")
+    lines.append(f"      {tool['description'][:52]}")
     
     # Optional details
     if show_details:
-        lines.append(f"      {YELLOW}Why:{RESET} {tool['why'][:48]}")
+        lines.append(f"      {YELLOW}Why:{RESET} {tool['why'][:52]}")
     
     # Output location if completed
     if tool['id'] in completed_scans and tool['id'] in scan_outputs:
-        lines.append(f"      {GREEN}Output:{RESET} {scan_outputs[tool['id']][:46]}")
+        lines.append(f"      {GREEN}Output:{RESET} {scan_outputs[tool['id']][:50]}")
     
     return lines
 
@@ -342,7 +346,7 @@ def print_menu(show_details=False):
     
     # Print both columns side by side
     for left_line, right_line in zip(left_lines, right_lines):
-        print(f"{pad_with_ansi(left_line, 58)}  {right_line}")
+        print(f"{pad_with_ansi(left_line, 62)}  {right_line}")
     
     print(f"\n{BOLD}═══ SPECIAL OPTIONS ═══{RESET}")
     print(f"  {BOLD}90.{RESET} {BOLD}Run All (Sequential){RESET} - Execute all tools one after another")
@@ -396,15 +400,49 @@ def run_seek_tool(tool, target_file=None):
         print(f"{YELLOW}[!] Warning: Target file '{target_file}' not found locally{RESET}")
         print(f"{YELLOW}[*] Tool will search in standard locations...{RESET}\n")
     
+    # Check if tool needs or supports credentials
+    username = None
+    password = None
+    if tool.get('needs_creds'):
+        print(f"{YELLOW}[!] {tool['name']} requires domain credentials for authenticated attacks{RESET}")
+        username = input(f"{CYAN}Enter username (user@domain or DOMAIN\\user): {RESET}").strip()
+        if username:
+            import getpass
+            password = getpass.getpass(f"{CYAN}Enter password: {RESET}")
+        else:
+            print(f"{RED}[!] Credentials required. Exiting.{RESET}")
+            return False
+    elif tool.get('optional_creds'):
+        print(f"{YELLOW}[?] {tool['name']} supports optional credentials for authentication testing{RESET}")
+        use_creds = input(f"{CYAN}Test with credentials? [y/N]: {RESET}").strip().lower()
+        if use_creds in ['y', 'yes']:
+            username = input(f"{CYAN}Enter username: {RESET}").strip()
+            if username:
+                import getpass
+                password = getpass.getpass(f"{CYAN}Enter password: {RESET}")
+    
     # Build command - check if tool uses -f flag or positional argument
     cmd = [sys.executable, str(script_path)]
     
     # Tools that use -f flag
     if tool['name'] in ['DCSeek', 'PrintSeek', 'ShareSeek', 'PanelSeek', 'DbSeek', 'SMBSeek']:
         cmd.extend(['-f', target_file, '-v'])
+        # Add credentials if provided
+        if username and password:
+            cmd.extend(['-u', username, '-p', password])
     elif tool['name'] == 'VulnSeek':
         # VulnSeek v2 with full scan and Nuclei CVE scanning
         cmd.extend(['-f', target_file, '--full', '--nuclei', '-v'])
+    elif tool['name'] == 'KerbSeek':
+        # KerbSeek requires credentials and uses positional arg
+        cmd.extend([target_file, '-v'])
+        if username and password:
+            cmd.extend(['-u', username, '-p', password])
+    elif tool['name'] in ['LDAPSeek', 'WinRMSeek']:
+        # LDAPSeek and WinRMSeek with optional credentials (positional arg)
+        cmd.extend([target_file, '-v'])
+        if username and password:
+            cmd.extend(['-u', username, '-p', password])
     else:
         # Tools that use positional argument
         cmd.extend([target_file, '-v'])
