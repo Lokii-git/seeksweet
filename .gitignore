@@ -12,6 +12,7 @@ build/
 
 # SeekSweet specific
 .seeksweet_status.json
+seekerlogs/
 *list.txt
 *_details.txt
 *_details.json

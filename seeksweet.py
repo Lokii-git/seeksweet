@@ -33,6 +33,39 @@ scan_outputs = {}
 # Status file for persistent tracking
 STATUS_FILE = Path(__file__).parent / '.seeksweet_status.json'
 
+# Centralized logs folder
+LOGS_DIR = Path(__file__).parent / 'seekerlogs'
+
+def ensure_logs_dir():
+    """Create seekerlogs directory if it doesn't exist"""
+    LOGS_DIR.mkdir(exist_ok=True)
+    return LOGS_DIR
+
+def copy_outputs_to_logs(tool, tool_dir):
+    """Copy tool outputs to centralized seekerlogs folder"""
+    try:
+        logs_dir = ensure_logs_dir()
+        copied_files = []
+        
+        for output in tool['outputs']:
+            source = tool_dir / output
+            if source.exists():
+                dest = logs_dir / output
+                # Copy file
+                import shutil
+                shutil.copy2(source, dest)
+                copied_files.append(output)
+        
+        if copied_files:
+            print(f"{GREEN}[+] Copied {len(copied_files)} file(s) to seekerlogs/{RESET}")
+            for f in copied_files:
+                print(f"    {GREEN}→{RESET} seekerlogs/{f}")
+        
+        return True
+    except Exception as e:
+        print(f"{YELLOW}[!] Warning: Could not copy outputs to logs: {e}{RESET}")
+        return False
+
 def load_status():
     """Load completion status from file"""
     global completed_scans, scan_outputs
@@ -473,6 +506,7 @@ def print_menu(show_details=False):
         print(f"{pad_with_ansi(left_line, 62)}  {right_line}")
     
     print(f"\n{BOLD}═══ SPECIAL OPTIONS ═══{RESET}")
+    print(f"  {BOLD}89.{RESET} {BOLD}Find Alive Hosts{RESET} - Quick discovery to identify live targets (updates iplist.txt)")
     print(f"  {BOLD}90.{RESET} {BOLD}Run All (Sequential){RESET} - Execute all tools one after another")
     print(f"  {BOLD}91.{RESET} {BOLD}Run All (Parallel){RESET} - Execute all tools simultaneously")
     print(f"  {BOLD}92.{RESET} {BOLD}Run Recommended Sequence{RESET} - Run critical tools in optimal order")
@@ -538,13 +572,14 @@ def run_seek_tool(tool, target_file=None):
             return False
     elif tool.get('optional_creds'):
         print(f"{YELLOW}[?] {tool['name']} supports optional credentials for authentication testing{RESET}")
+        sys.stdout.flush()
         use_creds = input(f"{CYAN}Test with credentials? [y/N]: {RESET}").strip().lower()
         if use_creds in ['y', 'yes']:
             print()  # Add blank line for clarity
             username = input(f"{CYAN}Enter username: {RESET}").strip()
             if username:
                 password = input(f"{CYAN}Enter password: {RESET}").strip()
-                print(f"{GREEN}[+] Credentials captured{RESET}")
+                print(f"{GREEN}[+] Credentials captured (username: {username}){RESET}")
     
     # Build command - check if tool uses -f flag or positional argument
     cmd = [sys.executable, str(script_path)]
@@ -571,18 +606,18 @@ def run_seek_tool(tool, target_file=None):
         if tool['name'] == 'WinRMSeek':
             if not username or not password:
                 print(f"{YELLOW}[*] WinRMSeek can test connections with credentials{RESET}")
+                sys.stdout.flush()
                 test_creds = input(f"{CYAN}Do you want to test WinRM connections? (y/n): {RESET}").strip().lower()
                 
                 if test_creds == 'y':
                     if not username:
                         username = input(f"{CYAN}Username: {RESET}").strip()
                     if not password:
-                        import getpass
-                        password = getpass.getpass(f"{CYAN}Password: {RESET}")
+                        password = input(f"{CYAN}Password: {RESET}").strip()
                     
                     if username and password:
                         cmd.extend(['-t', '-u', username, '-p', password])
-                        print(f"{GREEN}[+] Will test connections with provided credentials{RESET}")
+                        print(f"{GREEN}[+] Will test connections with credentials (username: {username}){RESET}")
             else:
                 # Credentials already provided, add connection testing flag
                 cmd.extend(['-t', '-u', username, '-p', password])
@@ -623,6 +658,10 @@ def run_seek_tool(tool, target_file=None):
                 print(f"{GREEN}[+] Output files:{RESET}")
                 for output in found_outputs:
                     print(f"    {output}")
+                
+                # Copy outputs to centralized logs folder
+                print()
+                copy_outputs_to_logs(tool, output_dir)
             
             # Save status to disk
             save_status()
@@ -758,6 +797,80 @@ def run_recommended_sequence(target_file=None):
     print(f"{BOLD}{'='*80}{RESET}\n")
 
 
+def run_alive_check():
+    """Run alive host discovery and update iplist.txt"""
+    print(f"\n{CYAN}{BOLD}{'='*80}{RESET}")
+    print(f"{CYAN}{BOLD}ALIVE HOST DISCOVERY{RESET}")
+    print(f"{CYAN}{BOLD}{'='*80}{RESET}\n")
+    
+    print(f"{YELLOW}This will:{RESET}")
+    print(f"  1. Scan your IP list for alive hosts")
+    print(f"  2. Backup original list to iplist_full.txt")
+    print(f"  3. Replace iplist.txt with only alive hosts")
+    print(f"  4. All other tools will then only scan alive hosts\n")
+    
+    target_file = input(f"{CYAN}Enter IP list file to scan [iplist.txt]: {RESET}").strip()
+    if not target_file:
+        target_file = "iplist.txt"
+    
+    if not os.path.exists(target_file):
+        print(f"{RED}[!] Error: File not found: {target_file}{RESET}\n")
+        return
+    
+    # Count targets
+    with open(target_file, 'r') as f:
+        target_count = len([line for line in f if line.strip() and not line.startswith('#')])
+    
+    print(f"{GREEN}[+] Found {target_count} target(s) in {target_file}{RESET}\n")
+    
+    # Ask for scan options
+    print(f"{CYAN}[?] Nmap timing template:{RESET}")
+    print(f"  0. Paranoid (slowest, most stealthy)")
+    print(f"  1. Sneaky")
+    print(f"  2. Polite (recommended - good balance)")
+    print(f"  3. Normal")
+    print(f"  4. Aggressive (faster)")
+    print(f"  5. Insane (fastest, least accurate)")
+    
+    timing = input(f"{CYAN}Choose timing [0-5, default: 2]: {RESET}").strip()
+    if timing not in ['0', '1', '2', '3', '4', '5']:
+        timing = '2'
+    
+    verbose_choice = input(f"{CYAN}Show verbose nmap output? [y/N]: {RESET}").strip().lower()
+    
+    print(f"\n{CYAN}[*] Starting nmap host discovery (this may take a few minutes)...{RESET}\n")
+    
+    # Run aliveseek.py
+    script_path = Path(__file__).parent / 'aliveseek' / 'aliveseek.py'
+    
+    try:
+        cmd = [
+            sys.executable,
+            str(script_path),
+            target_file,
+            '-T', timing,
+            '--output', 'iplist.txt',
+            '--backup', 'iplist_full.txt'
+        ]
+        
+        if verbose_choice == 'y':
+            cmd.append('-v')
+        
+        result = subprocess.run(cmd)
+        
+        if result.returncode == 0:
+            print(f"\n{GREEN}{BOLD}[+] Alive host discovery complete!{RESET}")
+            print(f"{GREEN}[+] iplist.txt now contains only alive hosts{RESET}")
+            print(f"{GREEN}[+] Original list backed up to iplist_full.txt{RESET}\n")
+        else:
+            print(f"\n{RED}[!] Error during alive host discovery{RESET}\n")
+    
+    except Exception as e:
+        print(f"{RED}[!] Error running alive check: {e}{RESET}\n")
+    
+    input(f"{YELLOW}Press Enter to return to menu...{RESET}")
+
+
 def view_results_summary():
     """Display summary of completed scans"""
     print(f"\n{CYAN}{BOLD}{'='*80}{RESET}")
@@ -830,11 +943,15 @@ def main():
     # Load previous status
     load_status()
     
+    # Ensure seekerlogs directory exists
+    ensure_logs_dir()
+    
     print_banner()
     
     print(f"\n{CYAN}{BOLD}Welcome to SeekSweet!{RESET}")
     print(f"{WHITE}This orchestration tool guides you through the Seek Tools suite.{RESET}")
     print(f"{WHITE}Tools are organized by phase and priority for optimal workflow.{RESET}")
+    print(f"{GREEN}[+] All scan results will be copied to: seekerlogs/{RESET}")
     
     if completed_scans:
         print(f"{GREEN}[+] Loaded {len(completed_scans)} completed scans from previous session{RESET}")
@@ -856,7 +973,9 @@ def main():
             
             choice_num = int(choice)
             
-            if choice_num == 90:
+            if choice_num == 89:
+                run_alive_check()
+            elif choice_num == 90:
                 run_all_sequential()
             elif choice_num == 91:
                 run_all_parallel()
