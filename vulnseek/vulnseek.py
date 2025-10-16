@@ -352,8 +352,7 @@ def run_nuclei_cve_scan(targets: List[str], output_dir: str = 'nuclei_cve_result
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
-            timeout=1800  # 30 minute timeout
+            text=True
         )
         
         if result.stdout:
@@ -373,8 +372,6 @@ def run_nuclei_cve_scan(targets: List[str], output_dir: str = 'nuclei_cve_result
             
             print(f"{Colors.OKGREEN}[+] Nuclei found {len(findings)} CVE(s){Colors.ENDC}")
         
-    except subprocess.TimeoutExpired:
-        print(f"{Colors.WARNING}[!] Nuclei scan timed out{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[!] Error running Nuclei: {e}{Colors.ENDC}")
     finally:
