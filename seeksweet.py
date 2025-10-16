@@ -8,6 +8,7 @@ import os
 import sys
 import subprocess
 import json
+import getpass
 from datetime import datetime
 from pathlib import Path
 
@@ -531,8 +532,8 @@ def run_seek_tool(tool, target_file=None):
         print(f"{YELLOW}[!] {tool['name']} requires domain credentials for authenticated attacks{RESET}")
         username = input(f"{CYAN}Enter username (user@domain or DOMAIN\\user): {RESET}").strip()
         if username:
-            import getpass
             password = getpass.getpass(f"{CYAN}Enter password: {RESET}")
+            print(f"{GREEN}[+] Credentials captured{RESET}")
         else:
             print(f"{RED}[!] Credentials required. Exiting.{RESET}")
             return False
@@ -540,10 +541,11 @@ def run_seek_tool(tool, target_file=None):
         print(f"{YELLOW}[?] {tool['name']} supports optional credentials for authentication testing{RESET}")
         use_creds = input(f"{CYAN}Test with credentials? [y/N]: {RESET}").strip().lower()
         if use_creds in ['y', 'yes']:
+            print()  # Add blank line for clarity
             username = input(f"{CYAN}Enter username: {RESET}").strip()
             if username:
-                import getpass
                 password = getpass.getpass(f"{CYAN}Enter password: {RESET}")
+                print(f"{GREEN}[+] Credentials captured{RESET}")
     
     # Build command - check if tool uses -f flag or positional argument
     cmd = [sys.executable, str(script_path)]
