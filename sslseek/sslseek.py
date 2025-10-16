@@ -166,11 +166,11 @@ def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
     try:
         if verbose:
             # Show full output
-            result = subprocess.run(cmd, timeout=300)
+            result = subprocess.run(cmd)
             success = (result.returncode == 0)
         else:
             # Capture output
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             success = (result.returncode == 0)
             
             if result.stdout:
@@ -200,9 +200,6 @@ def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
                 print(f"{RED}{result.stderr}{RESET}")
             return False, [], [], []
     
-    except subprocess.TimeoutExpired:
-        print(f"{RED}[!] Scan timed out after 300 seconds{RESET}")
-        return False, [], [], []
     except Exception as e:
         print(f"{RED}[!] Error running testssl: {e}{RESET}")
         return False, [], [], []
