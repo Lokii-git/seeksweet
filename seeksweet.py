@@ -509,7 +509,7 @@ def print_menu(show_details=False):
     print(f"  {BOLD}89.{RESET} {BOLD}Find Alive Hosts{RESET} - Quick discovery to identify live targets (updates iplist.txt)")
     print(f"  {BOLD}90.{RESET} {BOLD}Run All (Sequential){RESET} - Execute all tools one after another")
     print(f"  {BOLD}91.{RESET} {BOLD}Run Enumeration Phase (Parallel + tmux){RESET} - Run all credential-free tools simultaneously in tmux")
-    print(f"  {BOLD}92.{RESET} {BOLD}Run Recommended Sequence{RESET} - Run critical enumeration tools in optimal order")
+    print(f"  {BOLD}92.{RESET} {BOLD}Run Enumeration Phase (Sequential){RESET} - Run all credential-free tools one by one")
     print(f"  {BOLD}93.{RESET} {BOLD}Toggle Details{RESET} - Show/hide detailed tool information")
     print(f"  {BOLD}94.{RESET} {BOLD}View Results Summary{RESET} - Show all completed scans and outputs")
     print(f"  {BOLD}95.{RESET} {BOLD}Reset Completion Status{RESET} - Clear all completion markers")
@@ -873,54 +873,74 @@ def run_enumeration_phase_parallel(target_file=None):
         print(f"{BOLD}{'='*80}{RESET}\n")
 
 
-def run_recommended_sequence(target_file=None):
-    """Run recommended critical enumeration tools in optimal order (credential-free)"""
-    # Filter to only enumeration tools (no credentials required) with CRITICAL/HIGH priority
-    recommended = [tool for tool in SEEK_TOOLS 
-                   if tool['priority'] in ['CRITICAL', 'HIGH'] 
-                   and not tool.get('needs_creds')]
+def run_enumeration_phase_sequential(target_file=None):
+    """Run all credential-free enumeration tools sequentially (simple, no tmux)"""
+    
+    # Filter to only enumeration tools (no credentials required)
+    enumeration_tools = [tool for tool in SEEK_TOOLS if not tool.get('needs_creds')]
     
     print(f"\n{CYAN}{BOLD}{'='*80}{RESET}")
-    print(f"{CYAN}{BOLD}RECOMMENDED ENUMERATION SEQUENCE{RESET}")
+    print(f"{CYAN}{BOLD}ENUMERATION PHASE - SEQUENTIAL EXECUTION{RESET}")
     print(f"{CYAN}{BOLD}{'='*80}{RESET}\n")
     
-    print(f"{YELLOW}This will run {len(recommended)} high-priority enumeration tools sequentially:{RESET}\n")
-    for tool in recommended:
+    print(f"{YELLOW}This will run {len(enumeration_tools)} credential-free enumeration tools one by one:{RESET}\n")
+    
+    # Show which tools will run
+    for tool in enumeration_tools:
         priority_color = get_priority_color(tool['priority'])
         cred_icon = " 🔑" if tool.get('optional_creds') else ""
-        print(f"  {tool['id']}. {tool['name']}{cred_icon} {priority_color}[{tool['priority']}]{RESET}")
+        print(f"  {tool['id']}. {tool['name']}{cred_icon} {priority_color}[{tool['priority']}]{RESET} - {tool['phase']}")
     
-    # Show excluded credential-required tools
-    cred_tools = [tool for tool in SEEK_TOOLS 
-                  if tool['priority'] in ['CRITICAL', 'HIGH'] 
-                  and tool.get('needs_creds')]
-    if cred_tools:
-        print(f"\n{YELLOW}Credential-required tools (run separately):{RESET}")
-        for tool in cred_tools:
-            print(f"  • {tool['name']} 🔑 - Requires domain credentials")
-    print()
+    print(f"\n{BOLD}Benefits:{RESET}")
+    print(f"  • Simple sequential execution - Easy to follow")
+    print(f"  • No tmux required - Works everywhere")
+    print(f"  • No credentials needed - Pure enumeration")
+    print(f"  • Results saved to {CYAN}seekerlogs/{RESET}")
+    
+    print(f"\n{YELLOW}Tools requiring credentials (not included):{RESET}")
+    cred_tools = [tool for tool in SEEK_TOOLS if tool.get('needs_creds')]
+    for tool in cred_tools:
+        print(f"  • {tool['name']} 🔑 - Run separately with credentials")
+    
+    print(f"\n{BLUE}Note: For faster execution, use Option 91 (Parallel + tmux){RESET}\n")
     
     if not target_file:
-        target_file = input(f"Enter target IP list file [iplist.txt]: ").strip()
+        target_file = input(f"{CYAN}Enter target IP list file [iplist.txt]: {RESET}").strip()
         if not target_file:
             target_file = "iplist.txt"
+    
+    # Confirm start
+    confirm = input(f"\n{CYAN}Start enumeration phase? (yes/no): {RESET}").strip().lower()
+    if confirm != 'yes':
+        print(f"{YELLOW}Enumeration phase cancelled.{RESET}")
+        return
     
     success_count = 0
     fail_count = 0
     
-    for tool in recommended:
+    print(f"\n{BLUE}{'='*80}{RESET}")
+    print(f"{BLUE}Starting Sequential Enumeration...{RESET}")
+    print(f"{BLUE}{'='*80}{RESET}\n")
+    
+    for i, tool in enumerate(enumeration_tools, 1):
+        print(f"\n{CYAN}{BOLD}[{i}/{len(enumeration_tools)}] Running: {tool['name']}{RESET}")
+        print(f"{CYAN}{'='*80}{RESET}\n")
+        
         if run_seek_tool(tool, target_file):
             success_count += 1
         else:
             fail_count += 1
         
-        if tool != recommended[-1]:
-            input(f"\n{YELLOW}Press Enter to continue to next tool...{RESET}")
+        # Don't prompt after last tool
+        if tool != enumeration_tools[-1]:
+            print(f"\n{YELLOW}{'='*80}{RESET}")
+            input(f"{YELLOW}Press Enter to continue to next tool...{RESET}")
     
     print(f"\n{BOLD}{'='*80}{RESET}")
-    print(f"{CYAN}{BOLD}Recommended Sequence Complete{RESET}")
-    print(f"{GREEN}Successful: {success_count}{RESET}")
-    print(f"{RED}Failed: {fail_count}{RESET}")
+    print(f"{CYAN}{BOLD}Enumeration Phase Complete{RESET}")
+    print(f"{GREEN}Successful: {success_count}/{len(enumeration_tools)}{RESET}")
+    if fail_count > 0:
+        print(f"{RED}Failed: {fail_count}{RESET}")
     print(f"{BOLD}{'='*80}{RESET}\n")
 
 
@@ -1107,7 +1127,7 @@ def main():
             elif choice_num == 91:
                 run_enumeration_phase_parallel()
             elif choice_num == 92:
-                run_recommended_sequence()
+                run_enumeration_phase_sequential()
             elif choice_num == 93:
                 show_details = not show_details
                 status = "enabled" if show_details else "disabled"
