@@ -8,15 +8,53 @@
 
 ## 🚀 Fresh vRPA Setup (3 Minutes)
 
-### Step 1: Pull SeekSweet
+### FASTEST: Import from Backup (Recommended for Repeat Deployments!) ⚡
+
+**Export once, reuse forever across all your disposable vRPAs!**
+
+#### First Time Setup (On Any Existing Nessus):
+```bash
+# Export your configured Nessus (license, settings, plugins)
+cd /opt/seeksweet/nessusseek
+./export_nessus.sh
+
+# Output: nessus_backup_YYYYMMDD_HHMMSS.tar
+# Save this file - you'll use it for ALL future vRPAs!
+```
+
+#### Every New vRPA After That:
+```bash
+# 1. Transfer backup
+scp nessus_backup_*.tar user@new-vrpa:/tmp/
+
+# 2. Import (instant activation!)
+cd /opt/seeksweet/nessusseek
+./activate_nessus.sh --import /tmp/nessus_backup_*.tar
+
+# 3. Run scans immediately!
+source ~/.nessus_keys
+./nessusseek.py -t iplist.txt
+```
+
+**Why this is amazing:**
+- ⚡ **Instant activation** - No waiting for plugin downloads!
+- 🔑 **One license** - Move it between vRPAs freely (disposable use case)
+- 💾 **All settings preserved** - Users, policies, everything
+- 🚀 **3-minute deployment** - Export once, import everywhere
+
+---
+
+### ALTERNATIVE: Fresh Activation (First Time or No Backup)
+
+#### Step 1: Pull SeekSweet
 ```bash
 cd /opt
 git clone https://github.com/Lokii-git/seeksweet.git
 cd seeksweet/Internal/seeksweet/nessusseek
-chmod +x activate_nessus.sh nessusseek.py
+chmod +x activate_nessus.sh export_nessus.sh nessusseek.py
 ```
 
-### Step 2: Run Activation Script
+#### Step 2: Run Activation Script
 ```bash
 # One command to rule them all
 ./activate_nessus.sh XXXX-XXXX-XXXX-XXXX
@@ -33,7 +71,15 @@ chmod +x activate_nessus.sh nessusseek.py
 - ✅ Generates API keys automatically
 - ✅ Saves to `~/.nessus_keys`
 
-### Step 3: Run Scans
+#### Step 3: Export for Future vRPAs
+```bash
+# After plugins download (30-60 min), export once:
+./export_nessus.sh
+
+# Save this backup - use it for all future vRPAs!
+```
+
+#### Step 4: Run Scans
 ```bash
 # Load credentials once per session
 source ~/.nessus_keys
@@ -46,6 +92,53 @@ source ~/.nessus_keys
 ---
 
 ## 📋 Engagement Workflow
+
+### Recommended: Import/Export Pattern (One License, Many vRPAs)
+
+**Initial Setup (Once):**
+```bash
+# Set up Nessus on your first vRPA
+./activate_nessus.sh YOUR-NESSUS-CODE
+# Wait for plugins to download (30-60 min)
+./export_nessus.sh
+# Save nessus_backup_*.tar to your secure storage
+```
+
+**Every New Engagement:**
+```bash
+# Deploy fresh vRPA
+git clone https://github.com/Lokii-git/seeksweet.git /opt/seeksweet
+cd /opt/seeksweet/Internal/seeksweet/nessusseek
+
+# Import previous config (instant activation!)
+./activate_nessus.sh --import ~/nessus_backup_*.tar
+
+# Scan immediately!
+source ~/.nessus_keys
+./nessusseek.py -t scope.txt -n "Initial-Scan"
+```
+
+**During Engagement:**
+```bash
+# Each terminal session
+source ~/.nessus_keys
+
+# Run scans as needed
+./nessusseek.py -t scope.txt -n "Initial-Scan"
+./nessusseek.py -t new_targets.txt -n "Expanded-Scan"
+./nessusseek.py --list  # Check scan status
+```
+
+**Engagement Complete:**
+```bash
+# Destroy vRPA
+# No re-activation needed - your backup works for next client!
+# One license = unlimited disposable vRPAs (one at a time)
+```
+
+---
+
+### Alternative: Fresh Activation Per Engagement
 
 ### Day 0 - Deployment
 ```bash

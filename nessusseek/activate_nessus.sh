@@ -3,13 +3,15 @@
 # activate_nessus.sh - Automated Nessus activation for fresh vRPAs
 #
 # Usage:
-#   ./activate_nessus.sh XXXX-XXXX-XXXX-XXXX
-#   ./activate_nessus.sh  # Will prompt for activation code
+#   ./activate_nessus.sh XXXX-XXXX-XXXX-XXXX          # Activate with code
+#   ./activate_nessus.sh --import nessus_backup.tar   # Import from backup
+#   ./activate_nessus.sh                              # Will prompt for activation code
 #
 # This script handles:
 # - Starting Nessus service
 # - Waiting for Nessus to initialize
 # - Automated activation with provided code
+# - OR importing settings from previous instance
 # - Creating admin user
 # - Generating API keys
 #
@@ -30,6 +32,8 @@ BOLD='\033[1m'
 NESSUS_URL="https://localhost:8834"
 NESSUS_USER="admin"
 NESSUS_PASS="changeme123!"  # Change this to your preferred default
+IMPORT_MODE=false
+IMPORT_FILE=""
 
 echo -e "${CYAN}${BOLD}"
 echo "=========================================================================="
@@ -37,17 +41,32 @@ echo "Nessus Activation Script - vRPA Quick Deploy"
 echo "=========================================================================="
 echo -e "${RESET}"
 
-# Get activation code
-ACTIVATION_CODE="$1"
-if [ -z "$ACTIVATION_CODE" ]; then
-    echo -e "${YELLOW}[*] Enter your Nessus Essentials activation code${RESET}"
-    echo -e "${YELLOW}[*] Get one free at: https://www.tenable.com/products/nessus/nessus-essentials${RESET}"
-    read -p "Activation Code: " ACTIVATION_CODE
-fi
+# Parse arguments
+if [ "$1" == "--import" ]; then
+    IMPORT_MODE=true
+    IMPORT_FILE="$2"
+    
+    if [ -z "$IMPORT_FILE" ] || [ ! -f "$IMPORT_FILE" ]; then
+        echo -e "${RED}[!] Import file not found: $IMPORT_FILE${RESET}"
+        echo -e "${YELLOW}Usage: $0 --import /path/to/nessus_backup.tar${RESET}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}[+] Import mode - will restore from: $IMPORT_FILE${RESET}"
+else
+    # Get activation code
+    ACTIVATION_CODE="$1"
+    if [ -z "$ACTIVATION_CODE" ]; then
+        echo -e "${YELLOW}[*] Enter your Nessus Essentials activation code${RESET}"
+        echo -e "${YELLOW}[*] Get one free at: https://www.tenable.com/products/nessus/nessus-essentials${RESET}"
+        echo -e "${YELLOW}[*] Or use --import to restore from backup${RESET}"
+        read -p "Activation Code: " ACTIVATION_CODE
+    fi
 
-if [ -z "$ACTIVATION_CODE" ]; then
-    echo -e "${RED}[!] Activation code is required${RESET}"
-    exit 1
+    if [ -z "$ACTIVATION_CODE" ]; then
+        echo -e "${RED}[!] Activation code is required${RESET}"
+        exit 1
+    fi
 fi
 
 # Check if Nessus is installed
@@ -99,6 +118,123 @@ if [ $WAITED -ge $MAX_WAIT ]; then
     echo -e "${RED}[!] Timeout waiting for Nessus to start${RESET}"
     exit 1
 fi
+
+# Handle import mode
+if [ "$IMPORT_MODE" = true ]; then
+    echo -e "${CYAN}${BOLD}"
+    echo "=========================================================================="
+    echo "IMPORT MODE - Restoring Nessus Configuration"
+    echo "==========================================================================${RESET}"
+    
+    # Stop Nessus before importing
+    echo -e "${BLUE}[*] Stopping Nessus for import...${RESET}"
+    if command -v systemctl &> /dev/null; then
+        sudo systemctl stop nessusd
+    elif command -v service &> /dev/null; then
+        sudo service nessusd stop
+    fi
+    sleep 5
+    
+    # Extract and restore backup
+    echo -e "${BLUE}[*] Extracting backup: $IMPORT_FILE${RESET}"
+    TEMP_DIR=$(mktemp -d)
+    tar -xf "$IMPORT_FILE" -C "$TEMP_DIR"
+    
+    # Determine Nessus data directory
+    if [ -d /opt/nessus/var/nessus ]; then
+        NESSUS_DATA="/opt/nessus/var/nessus"
+    elif [ -d /usr/local/nessus/var/nessus ]; then
+        NESSUS_DATA="/usr/local/nessus/var/nessus"
+    else
+        echo -e "${RED}[!] Could not find Nessus data directory${RESET}"
+        exit 1
+    fi
+    
+    # Backup current data (just in case)
+    echo -e "${BLUE}[*] Backing up current Nessus data...${RESET}"
+    sudo mv "$NESSUS_DATA" "${NESSUS_DATA}.backup.$(date +%s)" 2>/dev/null || true
+    
+    # Restore from backup
+    echo -e "${BLUE}[*] Restoring configuration to: $NESSUS_DATA${RESET}"
+    sudo cp -r "$TEMP_DIR/nessus" "$(dirname $NESSUS_DATA)/"
+    
+    # Fix permissions
+    sudo chown -R root:root "$NESSUS_DATA"
+    
+    # Cleanup
+    rm -rf "$TEMP_DIR"
+    
+    # Restart Nessus
+    echo -e "${BLUE}[*] Restarting Nessus...${RESET}"
+    if command -v systemctl &> /dev/null; then
+        sudo systemctl start nessusd
+    elif command -v service &> /dev/null; then
+        sudo service nessusd start
+    fi
+    
+    echo -e "${CYAN}[*] Waiting for Nessus to reload...${RESET}"
+    sleep 30
+    
+    # Wait for web interface
+    WAITED=0
+    while [ $WAITED -lt $MAX_WAIT ]; do
+        if curl -k -s "$NESSUS_URL" > /dev/null 2>&1; then
+            echo -e "${GREEN}[+] Nessus restored and ready!${RESET}"
+            break
+        fi
+        sleep 5
+        WAITED=$((WAITED + 5))
+    done
+    
+    echo -e "${GREEN}${BOLD}"
+    echo "=========================================================================="
+    echo "Import Complete!"
+    echo "==========================================================================${RESET}"
+    echo -e "${CYAN}Nessus URL:${RESET} $NESSUS_URL"
+    echo -e "${YELLOW}[*] Your previous settings, license, and plugins have been restored${RESET}"
+    echo -e "${YELLOW}[*] Login with your original admin credentials${RESET}"
+    echo ""
+    
+    # Try to generate API keys with default credentials
+    echo -e "${BLUE}[*] Attempting to generate API keys...${RESET}"
+    read -sp "Enter admin password from backup: " USER_PASS
+    echo ""
+    
+    AUTH_RESPONSE=$(curl -k -s -X POST "$NESSUS_URL/session" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"$NESSUS_USER\",\"password\":\"$USER_PASS\"}")
+    
+    TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+    
+    if [ -n "$TOKEN" ]; then
+        echo -e "${GREEN}[+] Authenticated successfully${RESET}"
+        
+        # Generate API keys
+        API_RESPONSE=$(curl -k -s -X PUT "$NESSUS_URL/session/keys" \
+            -H "X-Cookie: token=$TOKEN" \
+            -H "Content-Type: application/json")
+        
+        ACCESS_KEY=$(echo "$API_RESPONSE" | grep -o '"accessKey":"[^"]*"' | cut -d'"' -f4)
+        SECRET_KEY=$(echo "$API_RESPONSE" | grep -o '"secretKey":"[^"]*"' | cut -d'"' -f4)
+        
+        if [ -n "$ACCESS_KEY" ] && [ -n "$SECRET_KEY" ]; then
+            cat > ~/.nessus_keys << EOF
+# Nessus API Keys (Imported Configuration)
+# Generated: $(date)
+export NESSUS_ACCESS_KEY="$ACCESS_KEY"
+export NESSUS_SECRET_KEY="$SECRET_KEY"
+export NESSUS_URL="$NESSUS_URL"
+EOF
+            chmod 600 ~/.nessus_keys
+            
+            echo -e "${GREEN}[+] API keys saved to ~/.nessus_keys${RESET}"
+            echo -e "${YELLOW}[*] Load with: source ~/.nessus_keys${RESET}"
+        fi
+    fi
+    
+    exit 0
+fi
+
 
 # Check if already initialized
 echo -e "${BLUE}[*] Checking Nessus status...${RESET}"

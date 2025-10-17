@@ -28,8 +28,31 @@ sudo systemctl start nessusd
 
 **Perfect for fresh Kali boxes or vRPAs that get redeployed for each engagement!**
 
+#### Method 1: Import from Backup (Fastest - Recommended!) ⚡
+
 ```bash
-# One-command activation (recommended)
+# On your current vRPA (one-time export)
+./export_nessus.sh
+
+# Transfer to new vRPA
+scp nessus_backup_*.tar user@new-vrpa:/tmp/
+
+# On new vRPA (instant restore!)
+./activate_nessus.sh --import /tmp/nessus_backup_*.tar
+source ~/.nessus_keys
+./nessusseek.py -t iplist.txt
+```
+
+**Benefits:**
+- ✅ Keeps your license - no re-activation needed!
+- ✅ Preserves all settings and user accounts
+- ✅ Plugins already downloaded (30-60 min saved!)
+- ✅ Perfect for disposable vRPAs - export once, import everywhere
+
+#### Method 2: Fresh Activation
+
+```bash
+# One-command activation
 ./activate_nessus.sh XXXX-XXXX-XXXX-XXXX
 
 # Or let it prompt you
