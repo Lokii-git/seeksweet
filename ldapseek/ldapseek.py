@@ -1524,15 +1524,19 @@ Examples:
     print()
     
     results = []
+    completed = 0
+    enumerated = 0
     
     try:
         for dc_ip in dc_ips:
             try:
+                completed += 1
                 print(f"{BLUE}[*]{RESET} Enumerating {dc_ip}...")
                 result = scan_domain_controller(dc_ip, args)
                 results.append(result)
                 
                 if result['status'] == 'enumerated':
+                    enumerated += 1
                     print(f"{GREEN}[+]{RESET} {dc_ip} - Domain: {result.get('domain', 'Unknown')}")
                     
                     if result['anonymous_bind']:
@@ -1597,6 +1601,10 @@ Examples:
                 else:
                     if args.verbose:
                         print(f"{RED}[!]{RESET} {dc_ip} - Unreachable")
+                
+                # Progress indicator
+                if completed % 5 == 0 or completed == len(dc_ips):
+                    print(f"\n{CYAN}[*] Progress: {completed}/{len(dc_ips)} DCs ({enumerated} enumerated){RESET}\n")
                 
             except KeyboardInterrupt:
                 print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")

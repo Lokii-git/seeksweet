@@ -843,6 +843,8 @@ Connect to discovered hosts:
     print()
     
     results = []
+    completed = 0
+    winrm_found = 0
     
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
@@ -853,8 +855,10 @@ Connect to discovered hosts:
                 try:
                     result = future.result()
                     results.append(result)
+                    completed += 1
                     
                     if result['winrm_http'] or result['winrm_https']:
+                        winrm_found += 1
                         services = []
                         if result['winrm_http']:
                             services.append('HTTP:5985')
@@ -880,6 +884,10 @@ Connect to discovered hosts:
                     
                     elif args.verbose:
                         print(f"{BLUE}[*]{RESET} {ip} - No WinRM")
+                    
+                    # Progress indicator
+                    if completed % 10 == 0 or completed == len(ips):
+                        print(f"\n{CYAN}[*] Progress: {completed}/{len(ips)} ({winrm_found} with WinRM){RESET}\n")
                 
                 except KeyboardInterrupt:
                     print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")

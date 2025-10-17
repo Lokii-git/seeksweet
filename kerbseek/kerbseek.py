@@ -852,11 +852,20 @@ Examples:
             print(f"{CYAN}[*] Starting auto-discovery mode...{RESET}")
             print(f"{CYAN}[*] Domain Controllers: {len(dc_ips)}{RESET}\n")
             
+            completed = 0
+            vulnerable_found = 0
             for dc_ip in dc_ips:
+                completed += 1
                 if check_kerberos_port(dc_ip, timeout=args.timeout):
                     print(f"{BLUE}[*]{RESET} Attacking {dc_ip}...")
                     dc_results = auto_discover_and_attack(dc_ip, args)
+                    if dc_results:
+                        vulnerable_found += len([r for r in dc_results if r['status'] == 'success'])
                     results.extend(dc_results)
+                    
+                    # Progress indicator
+                    if completed % 5 == 0 or completed == len(dc_ips):
+                        print(f"\n{CYAN}[*] Progress: {completed}/{len(dc_ips)} DCs ({vulnerable_found} vulnerable accounts){RESET}\n")
                 elif args.verbose:
                     print(f"{RED}[!]{RESET} {dc_ip} - Kerberos port closed")
         

@@ -915,6 +915,8 @@ Backup Systems Detected:
     print()
     
     results = []
+    completed = 0
+    backup_found = 0
     
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
@@ -925,8 +927,10 @@ Backup Systems Detected:
                 try:
                     result = future.result()
                     results.append(result)
+                    completed += 1
                     
                     if result['identified_systems']:
+                        backup_found += 1
                         systems = ', '.join([s['system'] for s in result['identified_systems']])
                         
                         severity = f"{RED}[BACKUP]{RESET}"
@@ -942,6 +946,10 @@ Backup Systems Detected:
                     
                     elif args.verbose:
                         print(f"{BLUE}[*]{RESET} {ip} - No backup systems detected")
+                    
+                    # Progress indicator
+                    if completed % 10 == 0 or completed == len(ips):
+                        print(f"\n{CYAN}[*] Progress: {completed}/{len(ips)} ({backup_found} backup systems){RESET}\n")
                 
                 except KeyboardInterrupt:
                     print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")

@@ -553,6 +553,10 @@ Manual enumeration:
     
     results = []
     
+    results = []
+    completed = 0
+    snmp_found = 0
+    
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
             future_to_ip = {executor.submit(scan_host, ip, args): ip for ip in ips}
@@ -562,8 +566,10 @@ Manual enumeration:
                 try:
                     result = future.result()
                     results.append(result)
+                    completed += 1
                     
                     if result['valid_communities']:
+                        snmp_found += 1
                         severity = f"{RED}[CRITICAL]{RESET}" if result['writable_communities'] else f"{YELLOW}[HIGH]{RESET}"
                         
                         msg = f"{severity} {ip}"
@@ -583,6 +589,10 @@ Manual enumeration:
                     
                     elif args.verbose:
                         print(f"{BLUE}[*]{RESET} {ip} - SNMP closed")
+                    
+                    # Progress indicator
+                    if completed % 10 == 0 or completed == len(ips):
+                        print(f"\n{CYAN}[*] Progress: {completed}/{len(ips)} ({snmp_found} with SNMP){RESET}\n")
                 
                 except KeyboardInterrupt:
                     print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")

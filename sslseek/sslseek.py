@@ -1059,9 +1059,16 @@ Examples:
     
     # Scan targets
     results = []
+    completed = 0
     for target in targets:
+        completed += 1
+        print(f"\n{CYAN}[*] Scanning {completed}/{len(targets)}: {target}{RESET}")
         result = run_testssl_scan(target, testssl_path, args.full, args.verbose)
         results.append(result)
+        
+        # Progress indicator (after each target completes)
+        if completed < len(targets):
+            print(f"\n{CYAN}[*] Progress: {completed}/{len(targets)} targets completed{RESET}\n")
     
     # Save summary
     print(f"\n{CYAN}[*] Generating summary and guide...{RESET}")

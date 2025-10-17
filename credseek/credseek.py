@@ -1254,6 +1254,8 @@ Examples:
     print()
     
     results = []
+    completed = 0
+    creds_found = 0
     
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
@@ -1264,8 +1266,10 @@ Examples:
                 try:
                     result = future.result()
                     results.append(result)
+                    completed += 1
                     
                     if result['status'] == 'findings':
+                        creds_found += 1
                         severity = f"{RED}[HIGH]{RESET}"
                         msg = f"{severity} {ip}"
                         
@@ -1279,6 +1283,10 @@ Examples:
                         print(msg)
                     elif args.verbose:
                         print(f"{BLUE}[*]{RESET} {ip} - No findings")
+                    
+                    # Progress indicator
+                    if completed % 10 == 0 or completed == len(ips):
+                        print(f"\n{CYAN}[*] Progress: {completed}/{len(ips)} ({creds_found} with credentials){RESET}\n")
                         
                 except KeyboardInterrupt:
                     print(f"\n{YELLOW}[!] Scan interrupted by user{RESET}")
