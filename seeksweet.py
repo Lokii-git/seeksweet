@@ -590,6 +590,9 @@ def run_seek_tool(tool, target_file=None):
         # Add credentials if provided
         if username and password:
             cmd.extend(['-u', username, '-p', password])
+    elif tool['name'] == 'BackupSeek':
+        # BackupSeek with full scan and credential testing
+        cmd.extend([target_file, '--full', '--test-creds', '-v'])
     elif tool['name'] == 'VulnSeek':
         # VulnSeek v2 with full scan and Nuclei CVE scanning
         cmd.extend(['-f', target_file, '--full', '--nuclei', '-v'])
