@@ -508,12 +508,14 @@ def print_menu(show_details=False):
     print(f"\n{BOLD}═══ SPECIAL OPTIONS ═══{RESET}")
     print(f"  {BOLD}89.{RESET} {BOLD}Find Alive Hosts{RESET} - Quick discovery to identify live targets (updates iplist.txt)")
     print(f"  {BOLD}90.{RESET} {BOLD}Run All (Sequential){RESET} - Execute all tools one after another")
-    print(f"  {BOLD}91.{RESET} {BOLD}Run All (Parallel){RESET} - Execute all tools simultaneously")
-    print(f"  {BOLD}92.{RESET} {BOLD}Run Recommended Sequence{RESET} - Run critical tools in optimal order")
+    print(f"  {BOLD}91.{RESET} {BOLD}Run Enumeration Phase (Parallel + tmux){RESET} - Run all credential-free tools simultaneously in tmux")
+    print(f"  {BOLD}92.{RESET} {BOLD}Run Recommended Sequence{RESET} - Run critical enumeration tools in optimal order")
     print(f"  {BOLD}93.{RESET} {BOLD}Toggle Details{RESET} - Show/hide detailed tool information")
     print(f"  {BOLD}94.{RESET} {BOLD}View Results Summary{RESET} - Show all completed scans and outputs")
     print(f"  {BOLD}95.{RESET} {BOLD}Reset Completion Status{RESET} - Clear all completion markers")
     print(f"  {BOLD} 0.{RESET} {BOLD}Exit{RESET}")
+    
+    print(f"\n{BOLD}{'='*80}{RESET}")
     
     print(f"\n{BOLD}{'='*80}{RESET}")
 
@@ -711,69 +713,191 @@ def run_all_sequential(target_file=None):
     print(f"{BOLD}{'='*80}{RESET}\n")
 
 
-def run_all_parallel(target_file=None):
-    """Run all tools in parallel"""
-    print(f"\n{CYAN}{BOLD}Running all tools in parallel mode...{RESET}\n")
-    print(f"{YELLOW}Warning: This will execute all 14 tools simultaneously!{RESET}")
-    print(f"{YELLOW}This may consume significant system resources.{RESET}\n")
+def run_enumeration_phase_parallel(target_file=None):
+    """Run all credential-free enumeration tools in parallel using tmux"""
     
-    confirm = input("Are you sure you want to continue? (yes/no): ").strip().lower()
+    # Filter to only enumeration tools (no credentials required)
+    enumeration_tools = [tool for tool in SEEK_TOOLS if not tool.get('needs_creds')]
+    
+    print(f"\n{CYAN}{BOLD}{'='*80}{RESET}")
+    print(f"{CYAN}{BOLD}ENUMERATION PHASE - PARALLEL EXECUTION{RESET}")
+    print(f"{CYAN}{BOLD}{'='*80}{RESET}\n")
+    
+    print(f"{YELLOW}This will run {len(enumeration_tools)} credential-free enumeration tools in parallel:{RESET}\n")
+    
+    # Show which tools will run
+    for tool in enumeration_tools:
+        priority_color = get_priority_color(tool['priority'])
+        cred_icon = " 🔑" if tool.get('optional_creds') else ""
+        print(f"  {tool['id']}. {tool['name']}{cred_icon} {priority_color}[{tool['priority']}]{RESET} - {tool['phase']}")
+    
+    print(f"\n{BOLD}Key Benefits:{RESET}")
+    print(f"  • Runs in {GREEN}tmux{RESET} - Resilient to disconnections")
+    print(f"  • Each tool in separate window - Easy monitoring")
+    print(f"  • No credentials required - Pure enumeration")
+    print(f"  • Results saved to {CYAN}seekerlogs/{RESET}\n")
+    
+    print(f"{YELLOW}Tools requiring credentials (not included):{RESET}")
+    cred_tools = [tool for tool in SEEK_TOOLS if tool.get('needs_creds')]
+    for tool in cred_tools:
+        print(f"  • {tool['name']} - Run separately with credentials")
+    
+    print(f"\n{YELLOW}Warning: This may consume significant system resources.{RESET}\n")
+    
+    confirm = input(f"{CYAN}Start enumeration phase? (yes/no): {RESET}").strip().lower()
     if confirm != 'yes':
-        print(f"{YELLOW}Parallel execution cancelled.{RESET}")
+        print(f"{YELLOW}Enumeration phase cancelled.{RESET}")
         return
     
     if not target_file:
-        target_file = input(f"Enter target IP list file [iplist.txt]: ").strip()
+        target_file = input(f"{CYAN}Enter target IP list file [iplist.txt]: {RESET}").strip()
         if not target_file:
             target_file = "iplist.txt"
     
-    processes = []
-    
-    print(f"\n{BLUE}[*] Starting all tools in parallel...{RESET}\n")
-    
-    for tool in SEEK_TOOLS:
-        script_path = Path(__file__).parent / tool['script']
-        if script_path.exists():
-            cmd = [sys.executable, str(script_path), target_file, '-v']
-            print(f"{BLUE}[*] Starting: {tool['name']}{RESET}")
-            try:
-                proc = subprocess.Popen(cmd, cwd=script_path.parent)
-                processes.append((tool, proc))
-            except Exception as e:
-                print(f"{RED}[!] Failed to start {tool['name']}: {str(e)}{RESET}")
-    
-    print(f"\n{CYAN}[*] All tools started. Waiting for completion...{RESET}\n")
-    
-    # Wait for all processes to complete
-    success_count = 0
-    fail_count = 0
-    
-    for tool, proc in processes:
-        proc.wait()
-        if proc.returncode == 0:
-            print(f"{GREEN}[+] {tool['name']} completed successfully{RESET}")
-            completed_scans[tool['id']] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            success_count += 1
+    # Check for tmux
+    try:
+        result = subprocess.run(['tmux', '-V'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"{RED}[!] tmux not found. Please install tmux for session resilience.{RESET}")
+            print(f"{YELLOW}[*] Falling back to standard parallel execution...{RESET}\n")
+            use_tmux = False
         else:
-            print(f"{RED}[!] {tool['name']} failed{RESET}")
-            fail_count += 1
+            print(f"{GREEN}[+] tmux detected: {result.stdout.strip()}{RESET}")
+            use_tmux = True
+    except FileNotFoundError:
+        print(f"{RED}[!] tmux not found. Please install tmux for session resilience.{RESET}")
+        print(f"{YELLOW}[*] Falling back to standard parallel execution...{RESET}\n")
+        use_tmux = False
     
-    print(f"\n{BOLD}{'='*80}{RESET}")
-    print(f"{CYAN}{BOLD}Parallel Scan Complete{RESET}")
-    print(f"{GREEN}Successful: {success_count}{RESET}")
-    print(f"{RED}Failed: {fail_count}{RESET}")
-    print(f"{BOLD}{'='*80}{RESET}\n")
+    session_name = f"seeksweet-enum-{datetime.now().strftime('%H%M%S')}"
+    
+    if use_tmux:
+        print(f"\n{BLUE}[*] Creating tmux session: {session_name}{RESET}")
+        print(f"{BLUE}[*] To attach: tmux attach -t {session_name}{RESET}")
+        print(f"{BLUE}[*] To detach: Press Ctrl+B then D{RESET}\n")
+        
+        # Create new tmux session with first tool
+        first_tool = enumeration_tools[0]
+        script_path = Path(__file__).parent / first_tool['script']
+        cmd_parts = [sys.executable, str(script_path), target_file, '-v']
+        cmd_str = ' '.join(cmd_parts)
+        
+        # Create tmux session with first tool
+        try:
+            subprocess.run([
+                'tmux', 'new-session', '-d', '-s', session_name,
+                '-n', first_tool['name'],
+                '-c', str(script_path.parent),
+                cmd_str
+            ], check=True)
+            print(f"{GREEN}[+] Started: {first_tool['name']} (window 0){RESET}")
+        except Exception as e:
+            print(f"{RED}[!] Failed to create tmux session: {e}{RESET}")
+            return
+        
+        # Add remaining tools as new windows
+        for i, tool in enumerate(enumeration_tools[1:], 1):
+            script_path = Path(__file__).parent / tool['script']
+            if not script_path.exists():
+                print(f"{YELLOW}[!] Script not found: {tool['name']}{RESET}")
+                continue
+                
+            cmd_parts = [sys.executable, str(script_path), target_file, '-v']
+            cmd_str = ' '.join(cmd_parts)
+            
+            try:
+                subprocess.run([
+                    'tmux', 'new-window', '-t', f'{session_name}:{i}',
+                    '-n', tool['name'],
+                    '-c', str(script_path.parent),
+                    cmd_str
+                ], check=True)
+                print(f"{GREEN}[+] Started: {tool['name']} (window {i}){RESET}")
+            except Exception as e:
+                print(f"{RED}[!] Failed to start {tool['name']}: {e}{RESET}")
+        
+        print(f"\n{GREEN}[+] All {len(enumeration_tools)} tools launched in tmux!{RESET}")
+        print(f"\n{CYAN}{BOLD}TMUX COMMANDS:{RESET}")
+        print(f"  Attach to session:    {YELLOW}tmux attach -t {session_name}{RESET}")
+        print(f"  List windows:         {YELLOW}Ctrl+B then W{RESET}")
+        print(f"  Switch windows:       {YELLOW}Ctrl+B then 0-9{RESET}")
+        print(f"  Detach (keep running): {YELLOW}Ctrl+B then D{RESET}")
+        print(f"  Kill session:         {YELLOW}tmux kill-session -t {session_name}{RESET}\n")
+        
+        attach = input(f"{CYAN}Attach to tmux session now? (y/n): {RESET}").strip().lower()
+        if attach == 'y':
+            print(f"\n{GREEN}[+] Attaching to tmux session...{RESET}")
+            print(f"{YELLOW}[*] Press Ctrl+B then D to detach and return to menu{RESET}\n")
+            subprocess.run(['tmux', 'attach', '-t', session_name])
+        else:
+            print(f"{YELLOW}[*] Session running in background. Attach later with: tmux attach -t {session_name}{RESET}")
+    
+    else:
+        # Fallback: Standard parallel execution without tmux
+        processes = []
+        
+        print(f"\n{BLUE}[*] Starting all tools in parallel (no tmux)...{RESET}\n")
+        
+        for tool in enumeration_tools:
+            script_path = Path(__file__).parent / tool['script']
+            if script_path.exists():
+                cmd = [sys.executable, str(script_path), target_file, '-v']
+                print(f"{BLUE}[*] Starting: {tool['name']}{RESET}")
+                try:
+                    proc = subprocess.Popen(cmd, cwd=script_path.parent)
+                    processes.append((tool, proc))
+                except Exception as e:
+                    print(f"{RED}[!] Failed to start {tool['name']}: {str(e)}{RESET}")
+        
+        print(f"\n{CYAN}[*] All tools started. Waiting for completion...{RESET}\n")
+        print(f"{YELLOW}[!] WARNING: If connection drops, progress may be lost!{RESET}\n")
+        
+        # Wait for all processes to complete
+        success_count = 0
+        fail_count = 0
+        
+        for tool, proc in processes:
+            proc.wait()
+            if proc.returncode == 0:
+                print(f"{GREEN}[+] {tool['name']} completed successfully{RESET}")
+                completed_scans[tool['id']] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                success_count += 1
+            else:
+                print(f"{RED}[!] {tool['name']} failed{RESET}")
+                fail_count += 1
+        
+        print(f"\n{BOLD}{'='*80}{RESET}")
+        print(f"{CYAN}{BOLD}Enumeration Phase Complete{RESET}")
+        print(f"{GREEN}Successful: {success_count}{RESET}")
+        print(f"{RED}Failed: {fail_count}{RESET}")
+        print(f"{BOLD}{'='*80}{RESET}\n")
 
 
 def run_recommended_sequence(target_file=None):
-    """Run recommended critical tools in optimal order"""
-    recommended = [tool for tool in SEEK_TOOLS if tool['priority'] in ['CRITICAL', 'HIGH']]
+    """Run recommended critical enumeration tools in optimal order (credential-free)"""
+    # Filter to only enumeration tools (no credentials required) with CRITICAL/HIGH priority
+    recommended = [tool for tool in SEEK_TOOLS 
+                   if tool['priority'] in ['CRITICAL', 'HIGH'] 
+                   and not tool.get('needs_creds')]
     
-    print(f"\n{CYAN}{BOLD}Running recommended sequence (Critical & High priority tools)...{RESET}\n")
-    print(f"{YELLOW}This will run {len(recommended)} tools in optimal order:{RESET}")
+    print(f"\n{CYAN}{BOLD}{'='*80}{RESET}")
+    print(f"{CYAN}{BOLD}RECOMMENDED ENUMERATION SEQUENCE{RESET}")
+    print(f"{CYAN}{BOLD}{'='*80}{RESET}\n")
+    
+    print(f"{YELLOW}This will run {len(recommended)} high-priority enumeration tools sequentially:{RESET}\n")
     for tool in recommended:
         priority_color = get_priority_color(tool['priority'])
-        print(f"  {tool['id']}. {tool['name']} {priority_color}[{tool['priority']}]{RESET}")
+        cred_icon = " 🔑" if tool.get('optional_creds') else ""
+        print(f"  {tool['id']}. {tool['name']}{cred_icon} {priority_color}[{tool['priority']}]{RESET}")
+    
+    # Show excluded credential-required tools
+    cred_tools = [tool for tool in SEEK_TOOLS 
+                  if tool['priority'] in ['CRITICAL', 'HIGH'] 
+                  and tool.get('needs_creds')]
+    if cred_tools:
+        print(f"\n{YELLOW}Credential-required tools (run separately):{RESET}")
+        for tool in cred_tools:
+            print(f"  • {tool['name']} 🔑 - Requires domain credentials")
     print()
     
     if not target_file:
@@ -981,7 +1105,7 @@ def main():
             elif choice_num == 90:
                 run_all_sequential()
             elif choice_num == 91:
-                run_all_parallel()
+                run_enumeration_phase_parallel()
             elif choice_num == 92:
                 run_recommended_sequence()
             elif choice_num == 93:
