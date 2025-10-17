@@ -51,18 +51,33 @@ if [ -z "$ACTIVATION_CODE" ]; then
 fi
 
 # Check if Nessus is installed
-if ! command -v nessusd &> /dev/null; then
+if ! command -v nessusd &> /dev/null && [ ! -f /opt/nessus/sbin/nessusd ] && [ ! -f /usr/local/nessus/sbin/nessusd ]; then
     echo -e "${RED}[!] Nessus is not installed${RESET}"
     echo -e "${YELLOW}[*] Install from: https://www.tenable.com/downloads/nessus${RESET}"
     exit 1
 fi
 
+# Detect Nessus installation path
+if [ -f /opt/nessus/sbin/nessusd ]; then
+    NESSUS_BIN="/opt/nessus/sbin/nessusd"
+elif [ -f /usr/local/nessus/sbin/nessusd ]; then
+    NESSUS_BIN="/usr/local/nessus/sbin/nessusd"
+else
+    NESSUS_BIN="nessusd"
+fi
+
+echo -e "${BLUE}[*] Found Nessus: $NESSUS_BIN${RESET}"
+
 # Start Nessus service
 echo -e "${BLUE}[*] Starting Nessus service...${RESET}"
-sudo systemctl start nessusd || {
-    echo -e "${YELLOW}[*] Trying service command...${RESET}"
+if command -v systemctl &> /dev/null; then
+    sudo systemctl start nessusd 2>/dev/null || sudo /bin/systemctl start nessusd
+elif command -v service &> /dev/null; then
     sudo service nessusd start
-}
+else
+    # Try direct binary start
+    sudo $NESSUS_BIN -D
+fi
 
 echo -e "${CYAN}[*] Waiting for Nessus to initialize (this may take 60-90 seconds)...${RESET}"
 sleep 10
