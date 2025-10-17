@@ -102,61 +102,103 @@ fi
 
 # Check if already initialized
 echo -e "${BLUE}[*] Checking Nessus status...${RESET}"
-FEED_STATUS=$(curl -k -s "$NESSUS_URL/server/status" 2>/dev/null || echo "")
+SERVER_STATUS=$(curl -k -s "$NESSUS_URL/server/status" 2>/dev/null || echo "")
 
-if echo "$FEED_STATUS" | grep -q '"status":"ready"'; then
-    echo -e "${GREEN}[+] Nessus is already initialized!${RESET}"
-else
-    echo -e "${CYAN}[*] Initializing Nessus (this happens once)...${RESET}"
-    
-    # Create initial user account
-    echo -e "${BLUE}[*] Creating admin user: $NESSUS_USER${RESET}"
-    
-    curl -k -X POST "$NESSUS_URL/users" \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"username\": \"$NESSUS_USER\",
-            \"password\": \"$NESSUS_PASS\",
-            \"permissions\": 128,
-            \"name\": \"SeekSweet Admin\",
-            \"email\": \"admin@seeksweet.local\",
-            \"type\": \"local\"
-        }" 2>/dev/null && echo -e "${GREEN}[+] Admin user created${RESET}" || echo -e "${YELLOW}[*] User may already exist${RESET}"
-    
-    sleep 2
+# Check if we need to go through initial setup wizard
+if echo "$SERVER_STATUS" | grep -q '"code":401'; then
+    echo -e "${YELLOW}[!] Nessus needs initial setup via Web UI${RESET}"
+    echo -e "${CYAN}[*] Opening browser to complete setup...${RESET}"
+    echo ""
+    echo -e "${BOLD}=========================================================================="
+    echo "MANUAL SETUP REQUIRED (First Time Only)"
+    echo "==========================================================================${RESET}"
+    echo ""
+    echo -e "${YELLOW}1. Open browser to: ${GREEN}$NESSUS_URL${RESET}"
+    echo -e "${YELLOW}2. Click 'Register for Nessus Essentials'${RESET}"
+    echo -e "${YELLOW}3. Enter activation code: ${GREEN}$ACTIVATION_CODE${RESET}"
+    echo -e "${YELLOW}4. Create admin user:${RESET}"
+    echo -e "   ${CYAN}Username: admin${RESET}"
+    echo -e "   ${CYAN}Password: changeme123! ${YELLOW}(or your preferred password)${RESET}"
+    echo -e "${YELLOW}5. Wait for plugin download to complete (30-60 min)${RESET}"
+    echo ""
+    echo -e "${YELLOW}Then run this script again to generate API keys!${RESET}"
+    echo ""
+    exit 0
 fi
 
-# Authenticate and get session token
-echo -e "${BLUE}[*] Authenticating...${RESET}"
+if echo "$SERVER_STATUS" | grep -q '"status":"ready"'; then
+    echo -e "${GREEN}[+] Nessus is ready!${RESET}"
+else
+    echo -e "${YELLOW}[*] Nessus is initializing...${RESET}"
+fi
+
+# Try to authenticate
+echo -e "${BLUE}[*] Attempting authentication...${RESET}"
+
+# Prompt for password if using default
+read -sp "Enter Nessus admin password (default: changeme123!): " USER_PASS
+echo ""
+if [ -z "$USER_PASS" ]; then
+    USER_PASS="$NESSUS_PASS"
+fi
+# Try to authenticate
+echo -e "${BLUE}[*] Attempting authentication...${RESET}"
+
+# Prompt for password if using default
+read -sp "Enter Nessus admin password (default: changeme123!): " USER_PASS
+echo ""
+if [ -z "$USER_PASS" ]; then
+    USER_PASS="$NESSUS_PASS"
+fi
+
 AUTH_RESPONSE=$(curl -k -s -X POST "$NESSUS_URL/session" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"$NESSUS_USER\",\"password\":\"$NESSUS_PASS\"}")
+    -d "{\"username\":\"$NESSUS_USER\",\"password\":\"$USER_PASS\"}")
 
 TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
 
 if [ -z "$TOKEN" ]; then
     echo -e "${RED}[!] Authentication failed${RESET}"
-    echo -e "${YELLOW}[*] You may need to complete initial setup via Web UI: $NESSUS_URL${RESET}"
+    echo -e "${YELLOW}[*] This usually means:${RESET}"
+    echo -e "${YELLOW}   1. Wrong username/password${RESET}"
+    echo -e "${YELLOW}   2. Nessus needs initial setup via Web UI: $NESSUS_URL${RESET}"
+    echo -e "${YELLOW}   3. User account doesn't exist yet${RESET}"
+    echo ""
+    echo -e "${CYAN}To complete setup manually:${RESET}"
+    echo -e "${BLUE}  1. Browse to: $NESSUS_URL${RESET}"
+    echo -e "${BLUE}  2. Complete initial setup wizard${RESET}"
+    echo -e "${BLUE}  3. Create admin account${RESET}"
+    echo -e "${BLUE}  4. Enter activation code: $ACTIVATION_CODE${RESET}"
+    echo -e "${BLUE}  5. Run this script again to generate API keys${RESET}"
     exit 1
 fi
 
 echo -e "${GREEN}[+] Authenticated successfully${RESET}"
 
-# Register Nessus with activation code
-echo -e "${BLUE}[*] Registering Nessus with activation code...${RESET}"
-REGISTER_RESPONSE=$(curl -k -s -X POST "$NESSUS_URL/plugins/plugin-sets/register" \
-    -H "X-Cookie: token=$TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"code\":\"$ACTIVATION_CODE\"}")
+# Check if already registered
+LICENSE_INFO=$(curl -k -s "$NESSUS_URL/server/properties" \
+    -H "X-Cookie: token=$TOKEN")
 
-if echo "$REGISTER_RESPONSE" | grep -q '"code"'; then
-    echo -e "${GREEN}[+] Nessus registered successfully!${RESET}"
+if echo "$LICENSE_INFO" | grep -q '"type":"PV"\|"type":"VS"\|"type":"SC"'; then
+    LICENSE_TYPE=$(echo "$LICENSE_INFO" | grep -o '"type":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo -e "${GREEN}[+] Nessus already registered with license type: $LICENSE_TYPE${RESET}"
 else
-    echo -e "${YELLOW}[*] Registration response: $REGISTER_RESPONSE${RESET}"
-    if echo "$REGISTER_RESPONSE" | grep -qi "already"; then
-        echo -e "${GREEN}[+] Nessus is already registered${RESET}"
+    # Register Nessus with activation code
+    echo -e "${BLUE}[*] Registering Nessus with activation code...${RESET}"
+    REGISTER_RESPONSE=$(curl -k -s -X POST "$NESSUS_URL/plugins/plugin-sets/register" \
+        -H "X-Cookie: token=$TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"code\":\"$ACTIVATION_CODE\"}")
+
+    if echo "$REGISTER_RESPONSE" | grep -q '"code"'; then
+        echo -e "${GREEN}[+] Nessus registered successfully!${RESET}"
     else
-        echo -e "${RED}[!] Registration may have failed${RESET}"
+        echo -e "${YELLOW}[*] Registration response: $REGISTER_RESPONSE${RESET}"
+        if echo "$REGISTER_RESPONSE" | grep -qi "already"; then
+            echo -e "${GREEN}[+] Nessus is already registered${RESET}"
+        else
+            echo -e "${YELLOW}[!] Registration may have failed - check response above${RESET}"
+        fi
     fi
 fi
 
