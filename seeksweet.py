@@ -291,6 +291,18 @@ SEEK_TOOLS = [
         'outputs': ['ssllist.txt', 'SSL_ATTACK_GUIDE.txt', 'testssl_*.json'],
         'typical_args': 'target.com --full',
         'new_features': 'testssl.sh wrapper with 10+ CVE checks + attack guide'
+    },
+    {
+        'id': 17,
+        'name': 'NessusSeek',
+        'script': 'nessusseek/nessusseek.py',
+        'priority': 'HIGH',
+        'phase': 'Assessment',
+        'description': 'Nessus vulnerability scanner integration - Launch scans, monitor progress, and parse results',
+        'why': 'Professional vulnerability scanning with 100,000+ checks - Industry standard for compliance and assessment',
+        'outputs': ['nessuslist.txt', 'nessus_findings.txt', 'nessus_results.csv', 'NESSUS_GUIDE.txt'],
+        'typical_args': '-t iplist.txt -n "My Scan" (requires Nessus API keys)',
+        'new_features': 'Full Nessus API integration with automated results parsing'
     }
 ]
 

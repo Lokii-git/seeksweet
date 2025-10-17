@@ -33,6 +33,12 @@ found_creds.txt
 sharelist.txt
 share_details.txt
 
+# Nessus output files
+nessus_results.csv
+nessus_results.json
+nessus_findings.txt
+NESSUS_GUIDE.txt
+
 # IDE
 .vscode/
 .idea/
