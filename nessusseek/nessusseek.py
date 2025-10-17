@@ -12,11 +12,12 @@ Features:
 - Integration with SeekSweet workflow
 
 Usage:
-    ./nessusseek.py                              # Interactive mode (prompts for credentials)
-    ./nessusseek.py -t targets.txt               # Launch scan from IP list
-    ./nessusseek.py -t targets.txt -n "My Scan"  # Custom scan name
-    ./nessusseek.py --list                       # List existing scans
-    ./nessusseek.py --download SCAN_ID           # Download results from existing scan
+    ./nessusseek.py                                      # Interactive mode (prompts for credentials)
+    ./nessusseek.py --activation-code XXXX-XXXX-XXXX     # Activate Nessus Essentials/Pro
+    ./nessusseek.py -t targets.txt                       # Launch scan from IP list
+    ./nessusseek.py -t targets.txt -n "My Scan"          # Custom scan name
+    ./nessusseek.py --list                               # List existing scans
+    ./nessusseek.py --download SCAN_ID                   # Download results from existing scan
     
 Output:
     nessuslist.txt          - List of vulnerable hosts
@@ -83,6 +84,46 @@ class NessusAPI:
             'X-ApiKeys': f'accessKey={access_key}; secretKey={secret_key}',
             'Content-Type': 'application/json'
         }
+    
+    def register_nessus(self, activation_code):
+        """Register Nessus with activation code (Essentials/Professional)"""
+        try:
+            # First check if already registered
+            response = requests.get(
+                f'{self.url}/server/properties',
+                headers=self.headers,
+                verify=self.verify_ssl,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                props = response.json()
+                if props.get('license', {}).get('type') in ['PV', 'VS', 'SC']:
+                    print(f"{YELLOW}[*] Nessus already registered with {props['license']['type']} license{RESET}")
+                    return True, "Already registered"
+            
+            # Register with activation code
+            print(f"{CYAN}[*] Registering Nessus with activation code...{RESET}")
+            register_data = {
+                'code': activation_code
+            }
+            
+            response = requests.post(
+                f'{self.url}/plugins/plugin-sets/register',
+                headers=self.headers,
+                json=register_data,
+                verify=self.verify_ssl,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                print(f"{GREEN}[+] Nessus registered successfully!{RESET}")
+                return True, "Registration successful"
+            else:
+                return False, f"HTTP {response.status_code}: {response.text}"
+                
+        except Exception as e:
+            return False, str(e)
     
     def test_connection(self):
         """Test connection to Nessus"""
@@ -624,11 +665,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                              # Interactive mode
-  %(prog)s -t iplist.txt                # Launch scan from IP list
-  %(prog)s -t iplist.txt -n "My Scan"   # Custom scan name
-  %(prog)s --list                       # List existing scans
-  %(prog)s --download 42                # Download results from scan ID 42
+  %(prog)s                                      # Interactive mode
+  %(prog)s --activation-code XXXX-XXXX-XXXX     # Activate Nessus (fresh vRPA)
+  %(prog)s -t iplist.txt                        # Launch scan from IP list
+  %(prog)s -t iplist.txt -n "My Scan"           # Custom scan name
+  %(prog)s --list                               # List existing scans
+  %(prog)s --download 42                        # Download results from scan ID 42
         """
     )
     
@@ -642,6 +684,8 @@ Examples:
                        help='Nessus API access key')
     parser.add_argument('--secret-key',
                        help='Nessus API secret key')
+    parser.add_argument('--activation-code',
+                       help='Nessus activation code (for fresh installations)')
     parser.add_argument('--list', action='store_true',
                        help='List existing scans')
     parser.add_argument('--download', type=int, metavar='SCAN_ID',
@@ -653,9 +697,22 @@ Examples:
     
     print(BANNER)
     
-    # Prompt for API keys if not provided
+    # Try to get API keys from environment variables first
     if not args.access_key:
-        print(f"{YELLOW}[*] Nessus API keys can be generated in: Settings → API Keys{RESET}\n")
+        args.access_key = os.environ.get('NESSUS_ACCESS_KEY', '')
+    
+    if not args.secret_key:
+        args.secret_key = os.environ.get('NESSUS_SECRET_KEY', '')
+    
+    if not args.url or args.url == 'https://localhost:8834':
+        env_url = os.environ.get('NESSUS_URL', '')
+        if env_url:
+            args.url = env_url
+    
+    # Prompt for API keys if still not provided
+    if not args.access_key:
+        print(f"{YELLOW}[*] Nessus API keys can be generated in: Settings → API Keys{RESET}")
+        print(f"{YELLOW}[*] Or load from file: source ~/.nessus_keys{RESET}\n")
         args.access_key = input(f"{CYAN}Enter Nessus Access Key: {RESET}").strip()
     
     if not args.secret_key:
@@ -663,10 +720,21 @@ Examples:
     
     if not args.access_key or not args.secret_key:
         print(f"{RED}[!] API keys are required{RESET}")
+        print(f"{YELLOW}[*] Set environment variables or use --access-key and --secret-key{RESET}")
         return
     
     # Initialize Nessus API
     nessus = NessusAPI(args.url, args.access_key, args.secret_key)
+    
+    # Handle activation code if provided
+    if args.activation_code:
+        print(f"\n{BLUE}[*] Registering Nessus with activation code...{RESET}")
+        success, message = nessus.register_nessus(args.activation_code)
+        if not success:
+            print(f"{RED}[!] Registration failed: {message}{RESET}")
+            print(f"{YELLOW}[*] Note: You may need to complete setup first via Web UI{RESET}")
+            return
+        print(f"{GREEN}[+] {message}{RESET}")
     
     # Test connection
     print(f"\n{BLUE}[*] Testing connection to Nessus...{RESET}")

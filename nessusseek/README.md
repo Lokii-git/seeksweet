@@ -24,7 +24,45 @@ sudo systemctl start nessusd
 
 ## Setup
 
-### 1. Generate Nessus API Keys
+### Quick Deploy for Disposable vRPAs 🚀
+
+**Perfect for fresh Kali boxes or vRPAs that get redeployed for each engagement!**
+
+```bash
+# One-command activation (recommended)
+./activate_nessus.sh XXXX-XXXX-XXXX-XXXX
+
+# Or let it prompt you
+./activate_nessus.sh
+```
+
+This script automatically:
+- ✅ Starts Nessus service
+- ✅ Waits for initialization
+- ✅ Activates with your Essentials code
+- ✅ Creates admin user
+- ✅ Generates API keys
+- ✅ Saves credentials to `~/.nessus_keys`
+
+**Get your FREE Nessus Essentials activation code:**  
+https://www.tenable.com/products/nessus/nessus-essentials
+
+Then just run scans:
+```bash
+source ~/.nessus_keys
+./nessusseek.py -t iplist.txt
+```
+
+### Manual Setup (Alternative)
+
+#### 1. Activate Nessus via Python
+
+```bash
+# First-time activation with Python API
+./nessusseek.py --activation-code XXXX-XXXX-XXXX-XXXX --access-key KEY --secret-key KEY
+```
+
+#### 2. Generate Nessus API Keys
 
 1. Log into Nessus web interface (https://localhost:8834)
 2. Go to **Settings** → **API Keys**
@@ -34,6 +72,10 @@ sudo systemctl start nessusd
 ### 2. Run NessusSeek
 
 ```bash
+# With saved credentials (after activate_nessus.sh)
+source ~/.nessus_keys
+./nessusseek.py -t iplist.txt
+
 # Interactive mode (prompts for API keys)
 ./nessusseek.py -t iplist.txt
 
@@ -44,13 +86,35 @@ sudo systemctl start nessusd
 ./nessusseek.py -t iplist.txt -n "Production Network Scan"
 
 # List existing scans
-./nessusseek.py --list --access-key KEY --secret-key KEY
+./nessusseek.py --list
 
 # Download results from existing scan
-./nessusseek.py --download 42 --access-key KEY --secret-key KEY
+./nessusseek.py --download 42
+
+# Activate on fresh vRPA (if not using activate_nessus.sh)
+./nessusseek.py --activation-code XXXX-XXXX-XXXX --access-key KEY --secret-key KEY
 ```
 
 ## Usage Examples
+
+### Disposable vRPA Workflow (Recommended) 🎯
+
+```bash
+# On fresh Kali box deployment:
+cd /opt/seeksweet/nessusseek
+
+# 1. One-time activation
+./activate_nessus.sh XXXX-XXXX-XXXX-XXXX
+
+# 2. Load credentials
+source ~/.nessus_keys
+
+# 3. Run scans all engagement long!
+./nessusseek.py -t iplist.txt -n "Client-Scan-Day1"
+./nessusseek.py -t iplist.txt -n "Client-Scan-Day3"
+
+# Destroy vRPA, repeat for next client!
+```
 
 ### Quick Scan
 ```bash
@@ -73,10 +137,10 @@ sudo systemctl start nessusd
 ### Check Existing Scans
 ```bash
 # List all scans
-./nessusseek.py --list --access-key YOUR_KEY --secret-key YOUR_KEY
+./nessusseek.py --list
 
 # Download from specific scan
-./nessusseek.py --download 123 --access-key YOUR_KEY --secret-key YOUR_KEY
+./nessusseek.py --download 123
 ```
 
 ## Output Files
