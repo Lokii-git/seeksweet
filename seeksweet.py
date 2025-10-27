@@ -472,6 +472,9 @@ def print_menu(show_details=False):
     print(f"{ORANGE}{BOLD}✨ NEW FEATURES ADDED:{RESET} SMB Relay Detection, LAPS Enumeration, Enhanced Delegation, Password Policy, Kerberos Cracking Guide")
     print(f"{ORANGE}   Tools enhanced: DCSeek, SMBSeek, LDAPSeek, KerbSeek{RESET}\n")
     
+    # Flush output buffer after header
+    sys.stdout.flush()
+    
     # Group by phase
     phases = {}
     for tool in SEEK_TOOLS:
@@ -515,7 +518,14 @@ def print_menu(show_details=False):
     
     # Print both columns side by side
     for left_line, right_line in zip(left_lines, right_lines):
-        print(f"{pad_with_ansi(left_line, 62)}  {right_line}")
+        try:
+            print(f"{pad_with_ansi(left_line, 62)}  {right_line}")
+        except (BlockingIOError, BrokenPipeError):
+            # Fallback: simple print without complex formatting
+            try:
+                print(f"{left_line}  {right_line}")
+            except:
+                print(left_line)  # Last resort
     
     print(f"\n{BOLD}═══ SPECIAL OPTIONS ═══{RESET}")
     print(f"  {BOLD}89.{RESET} {BOLD}Find Alive Hosts{RESET} - Quick discovery to identify live targets (updates iplist.txt)")
