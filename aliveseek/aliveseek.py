@@ -31,9 +31,9 @@ def parse_nmap_output(output):
     """Parse nmap output to extract alive hosts"""
     alive_hosts = []
     
-    # Look for "Nmap scan report for" lines
+    # Look for "Nmap scan report for" lines that don't contain "[host down]"
     for line in output.split('\n'):
-        if 'Nmap scan report for' in line:
+        if 'Nmap scan report for' in line and '[host down]' not in line:
             # Extract IP address
             match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', line)
             if match:
@@ -62,10 +62,10 @@ def load_targets(file_path):
 def main():
     banner = f"""
 {CYAN}{BOLD}
-    ╔═══════════════════════════════════════╗
-    ║         AliveSeek - Host Discovery    ║
-    ║      Fast Alive Host Identification   ║
-    ╚═══════════════════════════════════════╝
+    =========================================
+           AliveSeek - Host Discovery
+        Fast Alive Host Identification
+    =========================================
 {RESET}
 """
     print(banner)
