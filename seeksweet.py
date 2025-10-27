@@ -652,6 +652,9 @@ def run_seek_tool(tool, target_file=None):
             # LDAPSeek
             if username and password:
                 cmd.extend(['-u', username, '-p', password])
+    elif tool['name'] == 'WebSeek':
+        # WebSeek with unlimited timeout for large scans
+        cmd.extend([target_file, '-v', '--max-scan-time', '0'])
     else:
         # Tools that use positional argument
         cmd.extend([target_file, '-v'])

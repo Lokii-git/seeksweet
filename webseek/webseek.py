@@ -219,15 +219,28 @@ def run_nuclei_scan(target_file, args):
     
     print(f"{YELLOW}[*] Starting Nuclei scan...{RESET}")
     print(f"{BLUE}[*] Command: {' '.join(cmd)}{RESET}")
-    print(f"{CYAN}[*] This may take a while depending on target count and template selection{RESET}\n")
+    print(f"{CYAN}[*] This may take a while depending on target count and template selection{RESET}")
+    
+    if args.max_scan_time > 0:
+        print(f"{CYAN}[*] Maximum scan time: {args.max_scan_time} seconds ({args.max_scan_time//60} minutes){RESET}")
+    else:
+        print(f"{CYAN}[*] No timeout set - scan will run until completion{RESET}")
+    print()
     
     try:
-        # Run Nuclei scan
-        result = subprocess.run(cmd,
-                              env=env,
-                              capture_output=True,
-                              text=True,
-                              timeout=args.max_scan_time)
+        # Run Nuclei scan with optional timeout
+        if args.max_scan_time > 0:
+            result = subprocess.run(cmd,
+                                  env=env,
+                                  capture_output=True,
+                                  text=True,
+                                  timeout=args.max_scan_time)
+        else:
+            # No timeout - let it run as long as needed
+            result = subprocess.run(cmd,
+                                  env=env,
+                                  capture_output=True,
+                                  text=True)
         
         # Print output
         if result.stdout:
@@ -244,6 +257,7 @@ def run_nuclei_scan(target_file, args):
             
     except subprocess.TimeoutExpired:
         print(f"\n{RED}[!] Scan timed out after {args.max_scan_time} seconds{RESET}")
+        print(f"{YELLOW}[*] For large subnets, consider using --max-scan-time 0 for unlimited time{RESET}")
         return False
     except Exception as e:
         print(f"\n{RED}[!] Error running Nuclei: {e}{RESET}")
@@ -661,8 +675,8 @@ Examples:
                        help='Concurrency level (default: 25)')
     parser.add_argument('--timeout', type=int, default=10,
                        help='Timeout per request in seconds (default: 10)')
-    parser.add_argument('--max-scan-time', type=int, default=3600,
-                       help='Maximum scan time in seconds (default: 3600)')
+    parser.add_argument('--max-scan-time', type=int, default=0,
+                       help='Maximum scan time in seconds (default: 0 = unlimited)')
     parser.add_argument('--update', '-u', action='store_true',
                        help='Update Nuclei templates before scanning')
     parser.add_argument('--skip-update', action='store_true',
