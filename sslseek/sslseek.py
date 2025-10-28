@@ -485,16 +485,33 @@ def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
                 
                 return findings
             else:
-                print(f"{YELLOW}[!] JSON output not found{RESET}")
+                print(f"{YELLOW}[!] JSON output not found - scan may have failed to complete{RESET}")
                 return None
         else:
-            print(f"{RED}[!] Scan failed{RESET}")
+            # More verbose failure message
+            print(f"{RED}[!] testssl.sh scan failed for {target} (exit code: {result.returncode}){RESET}")
+            print(f"{YELLOW}[*] This could be due to:{RESET}")
+            print(f"{YELLOW}    - Target not responding on SSL/TLS port{RESET}")
+            print(f"{YELLOW}    - Connection timeout or network issue{RESET}")
+            print(f"{YELLOW}    - SSL/TLS handshake failure{RESET}")
+            print(f"{YELLOW}    - testssl.sh compatibility issue{RESET}")
+            
             if not verbose and result.stderr:
+                print(f"{YELLOW}[*] Error details:{RESET}")
                 print(f"{RED}{result.stderr[:500]}{RESET}")
+            elif not verbose and result.stdout:
+                # Show last few lines of output for context
+                stdout_lines = result.stdout.strip().split('\n')
+                if len(stdout_lines) > 5:
+                    print(f"{YELLOW}[*] Last output lines:{RESET}")
+                    for line in stdout_lines[-5:]:
+                        print(f"    {line}")
+            
             return None
     
     except Exception as e:
-        print(f"{RED}[!] Error running testssl: {e}{RESET}")
+        print(f"{RED}[!] Error running testssl.sh: {e}{RESET}")
+        print(f"{YELLOW}[*] This is an SSLSeek execution error, not a scan failure{RESET}")
         return None
 
 def save_ssl_guide():
