@@ -163,57 +163,257 @@ def generate_testssl_command(target, testssl_path, full_scan=False, output_file=
     
     return cmd
 
-def parse_testssl_output(json_file):
-    """Parse testssl.sh JSON output for critical findings"""
-    critical_findings = []
-    high_findings = []
-    medium_findings = []
+def parse_testssl_output(json_file, target):
+    """
+    Parse testssl.sh JSON output and extract vulnerability findings.
+    Returns dict with vulnerability categories and certificate info.
+    """
+    findings = {
+        'target': target,
+        'vulnerabilities': {},
+        'cert_expired': False,
+        'cert_expiring_soon': False,
+        'cert_info': {},
+        'weak_ciphers': [],
+        'protocol_issues': []
+    }
     
     try:
         with open(json_file, 'r') as f:
             data = json.load(f)
         
-        # Look for critical vulnerabilities
-        critical_vulns = [
-            'heartbleed', 'ccs', 'ticketbleed', 'robot', 'secure_renego',
-            'secure_client_renego', 'crime', 'breach', 'poodle_ssl',
-            'fallback_scsv', 'sweet32', 'freak', 'drown', 'logjam',
-            'beast', 'rc4'
-        ]
-        
         for item in data:
-            if isinstance(item, dict):
-                severity = item.get('severity', '').upper()
-                finding = item.get('finding', '')
-                id_name = item.get('id', '')
+            if not isinstance(item, dict):
+                continue
                 
-                if severity == 'CRITICAL' or id_name in critical_vulns:
-                    critical_findings.append({
-                        'id': id_name,
-                        'finding': finding,
-                        'severity': 'CRITICAL'
-                    })
-                elif severity == 'HIGH':
-                    high_findings.append({
-                        'id': id_name,
-                        'finding': finding,
-                        'severity': 'HIGH'
-                    })
-                elif severity == 'MEDIUM':
-                    medium_findings.append({
-                        'id': id_name,
-                        'finding': finding,
-                        'severity': 'MEDIUM'
-                    })
+            severity = item.get('severity', '').upper()
+            finding = item.get('finding', '')
+            id_name = item.get('id', '')
+            
+            # Certificate expiration checks
+            if 'cert_expirationStatus' in id_name or 'cert_notAfter' in id_name:
+                if 'expired' in finding.lower():
+                    findings['cert_expired'] = True
+                    findings['cert_info']['status'] = 'EXPIRED'
+                elif 'expires' in finding.lower():
+                    # Check if expiring within 30 days
+                    findings['cert_info']['expiry'] = finding
+                    if any(word in finding.lower() for word in ['soon', 'day', 'week']):
+                        findings['cert_expiring_soon'] = True
+            
+            # Certificate details
+            if 'cert_' in id_name:
+                findings['cert_info'][id_name] = finding
+            
+            # Vulnerability detection - specific CVEs and attacks
+            vuln_patterns = {
+                'Heartbleed': ['heartbleed', 'CVE-2014-0160'],
+                'CCS_Injection': ['ccs', 'ccs injection', 'CVE-2014-0224'],
+                'Ticketbleed': ['ticketbleed', 'CVE-2016-9244'],
+                'ROBOT': ['robot', 'return of bleichenbacher'],
+                'Secure_Renegotiation': ['secure_renego', 'renegotiation'],
+                'CRIME': ['crime', 'CVE-2012-4929'],
+                'BREACH': ['breach', 'CVE-2013-3587'],
+                'POODLE_SSL': ['poodle', 'CVE-2014-3566'],
+                'Sweet32': ['sweet32', 'CVE-2016-2183', 'birthday'],
+                'FREAK': ['freak', 'CVE-2015-0204'],
+                'DROWN': ['drown', 'CVE-2016-0800'],
+                'Logjam': ['logjam', 'CVE-2015-4000'],
+                'BEAST': ['beast', 'CVE-2011-3389'],
+                'Lucky13': ['lucky13', 'lucky 13', 'CVE-2013-0169'],
+                'RC4': ['rc4', 'arcfour'],
+                'SSLv2': ['sslv2', 'ssl v2'],
+                'SSLv3': ['sslv3', 'ssl v3'],
+                'TLS_FALLBACK_SCSV': ['fallback', 'scsv'],
+                'TLS1.0': ['tls 1.0', 'tls1.0'],
+                'TLS1.1': ['tls 1.1', 'tls1.1']
+            }
+            
+            # Check if vulnerable
+            if severity in ['CRITICAL', 'HIGH', 'MEDIUM'] or 'vulnerable' in finding.lower():
+                for vuln_name, patterns in vuln_patterns.items():
+                    if any(pattern in id_name.lower() or pattern in finding.lower() for pattern in patterns):
+                        if 'not vulnerable' not in finding.lower() and 'no ' not in finding.lower():
+                            if vuln_name not in findings['vulnerabilities']:
+                                findings['vulnerabilities'][vuln_name] = []
+                            findings['vulnerabilities'][vuln_name].append({
+                                'severity': severity,
+                                'finding': finding,
+                                'id': id_name
+                            })
+            
+            # Weak cipher detection
+            if 'cipher' in id_name.lower() and any(word in finding.lower() for word in ['weak', 'null', 'export', 'anon']):
+                findings['weak_ciphers'].append(finding)
         
-        return critical_findings, high_findings, medium_findings
+        return findings
     
     except Exception as e:
         print(f"{YELLOW}[!] Could not parse JSON output: {e}{RESET}")
-        return [], [], []
+        return findings
+
+
+def organize_findings_by_vulnerability(all_results, output_base='sslseek_results'):
+    """
+    Organize scan results by vulnerability type into folders.
+    Creates vulnerability-specific folders and copies relevant files.
+    """
+    print(f"\n{CYAN}[*] Organizing findings by vulnerability type...{RESET}")
+    
+    # Create base output directory
+    if not os.path.exists(output_base):
+        os.makedirs(output_base)
+    
+    # Track which IPs have which vulnerabilities
+    vuln_to_targets = {}
+    expired_certs = []
+    expiring_soon_certs = []
+    
+    for result in all_results:
+        target = result['target']
+        
+        # Handle certificate expiration
+        if result['cert_expired']:
+            expired_certs.append(target)
+        if result['cert_expiring_soon']:
+            expiring_soon_certs.append(target)
+        
+        # Organize by vulnerability
+        for vuln_name, vuln_findings in result['vulnerabilities'].items():
+            if vuln_name not in vuln_to_targets:
+                vuln_to_targets[vuln_name] = []
+            vuln_to_targets[vuln_name].append({
+                'target': target,
+                'findings': vuln_findings
+            })
+    
+    # Create vulnerability-specific folders and copy files
+    for vuln_name, targets in vuln_to_targets.items():
+        vuln_dir = os.path.join(output_base, vuln_name)
+        os.makedirs(vuln_dir, exist_ok=True)
+        
+        # Create summary file for this vulnerability
+        summary_file = os.path.join(vuln_dir, f'{vuln_name}_summary.txt')
+        with open(summary_file, 'w') as f:
+            f.write(f"{'=' * 80}\n")
+            f.write(f"{vuln_name} - Affected Targets\n")
+            f.write(f"{'=' * 80}\n\n")
+            f.write(f"Total Affected: {len(targets)}\n\n")
+            
+            for target_info in targets:
+                f.write(f"\nTarget: {target_info['target']}\n")
+                f.write(f"{'-' * 80}\n")
+                for finding in target_info['findings']:
+                    f.write(f"  Severity: {finding['severity']}\n")
+                    f.write(f"  Finding: {finding['finding']}\n")
+                    f.write(f"  ID: {finding['id']}\n\n")
+        
+        # Copy JSON files for affected targets
+        for target_info in targets:
+            target = target_info['target']
+            json_file = f"testssl_{target.replace(':', '_').replace('/', '_')}.json"
+            if os.path.exists(json_file):
+                import shutil
+                dest = os.path.join(vuln_dir, os.path.basename(json_file))
+                shutil.copy(json_file, dest)
+        
+        print(f"{GREEN}[+] {vuln_name}: {len(targets)} affected targets{RESET}")
+    
+    # Handle expired certificates
+    if expired_certs or expiring_soon_certs:
+        cert_dir = os.path.join(output_base, 'Certificate_Issues')
+        os.makedirs(cert_dir, exist_ok=True)
+        
+        cert_report = os.path.join(cert_dir, 'certificate_report.txt')
+        with open(cert_report, 'w') as f:
+            f.write(f"{'=' * 80}\n")
+            f.write("SSL/TLS Certificate Issues Report\n")
+            f.write(f"{'=' * 80}\n\n")
+            
+            if expired_certs:
+                f.write(f"EXPIRED CERTIFICATES ({len(expired_certs)}):\n")
+                f.write(f"{'-' * 80}\n")
+                for target in sorted(expired_certs):
+                    f.write(f"  {target}\n")
+                f.write("\n")
+            
+            if expiring_soon_certs:
+                f.write(f"EXPIRING SOON ({len(expiring_soon_certs)}):\n")
+                f.write(f"{'-' * 80}\n")
+                for target in sorted(expiring_soon_certs):
+                    f.write(f"  {target}\n")
+        
+        print(f"{YELLOW}[!] Expired certificates: {len(expired_certs)}{RESET}")
+        print(f"{YELLOW}[!] Expiring soon: {len(expiring_soon_certs)}{RESET}")
+    
+    return vuln_to_targets, expired_certs, expiring_soon_certs
+
+
+def generate_master_summary(all_results, output_file='ssllist.txt'):
+    """
+    Generate master summary file with bite-sized information per IP.
+    Only includes IPs with findings.
+    """
+    print(f"\n{CYAN}[*] Generating master summary...{RESET}")
+    
+    with open(output_file, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write("SSLSeek - SSL/TLS Security Summary\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 80 + "\n\n")
+        
+        # Count total findings
+        total_with_findings = 0
+        
+        for result in all_results:
+            target = result['target']
+            
+            # Check if target has any findings
+            has_findings = (
+                result['vulnerabilities'] or 
+                result['cert_expired'] or 
+                result['cert_expiring_soon'] or
+                result['weak_ciphers']
+            )
+            
+            if not has_findings:
+                continue  # Skip targets with no findings
+            
+            total_with_findings += 1
+            
+            f.write(f"\n{'=' * 80}\n")
+            f.write(f"Target: {target}\n")
+            f.write(f"{'=' * 80}\n")
+            
+            # Certificate status
+            if result['cert_expired']:
+                f.write(f"  [CRITICAL] Certificate EXPIRED\n")
+            elif result['cert_expiring_soon']:
+                f.write(f"  [WARNING] Certificate expiring soon\n")
+            
+            # Vulnerabilities
+            if result['vulnerabilities']:
+                f.write(f"\n  Vulnerabilities Found ({len(result['vulnerabilities'])}):\n")
+                for vuln_name, findings in result['vulnerabilities'].items():
+                    severity = findings[0]['severity'] if findings else 'UNKNOWN'
+                    f.write(f"    [{severity}] {vuln_name}\n")
+            
+            # Weak ciphers
+            if result['weak_ciphers']:
+                f.write(f"\n  Weak Ciphers: {len(result['weak_ciphers'])} found\n")
+            
+            f.write("\n")
+        
+        f.write("\n" + "=" * 80 + "\n")
+        f.write(f"Total targets with findings: {total_with_findings}\n")
+        f.write("=" * 80 + "\n")
+    
+    print(f"{GREEN}[+] Master summary saved to: {output_file}{RESET}")
+    print(f"{CYAN}[*] Targets with findings: {total_with_findings}{RESET}")
+    return output_file
 
 def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
-    """Run testssl.sh scan"""
+    """Run testssl.sh scan and return parsed findings"""
     output_file = f"testssl_{target.replace(':', '_').replace('/', '_')}.json"
     
     # Ensure testssl.sh is executable before running
@@ -226,7 +426,8 @@ def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
     cmd = generate_testssl_command(target, testssl_path, full_scan, output_file)
     
     print(f"\n{CYAN}[*] Scanning SSL/TLS: {target}{RESET}")
-    print(f"{CYAN}[*] Command: {' '.join(cmd)}{RESET}\n")
+    if verbose:
+        print(f"{CYAN}[*] Command: {' '.join(cmd)}{RESET}\n")
     
     try:
         if verbose:
@@ -237,72 +438,40 @@ def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
             # Capture output
             result = subprocess.run(cmd, capture_output=True, text=True)
             success = (result.returncode == 0)
-            
-            if result.stdout:
-                print(result.stdout)
         
         if success:
             print(f"{GREEN}[+] Scan completed successfully{RESET}")
             
             # Parse findings if JSON exists
             if os.path.exists(output_file):
-                critical, high, medium = parse_testssl_output(output_file)
+                findings = parse_testssl_output(output_file, target)
                 
-                if critical:
-                    print(f"\n{RED}{BOLD}[!!!] CRITICAL VULNERABILITIES FOUND: {len(critical)}{RESET}")
-                    for finding in critical[:5]:  # Show top 5
-                        print(f"  {RED}- {finding['id']}: {finding['finding'][:80]}{RESET}")
+                # Display quick summary
+                vuln_count = len(findings['vulnerabilities'])
+                if vuln_count > 0:
+                    print(f"{RED}[!] Found {vuln_count} vulnerability types{RESET}")
+                    for vuln_name in list(findings['vulnerabilities'].keys())[:5]:
+                        print(f"    - {vuln_name}")
+                    if vuln_count > 5:
+                        print(f"    ... and {vuln_count - 5} more")
                 
-                if high:
-                    print(f"\n{YELLOW}[!] HIGH SEVERITY FINDINGS: {len(high)}{RESET}")
-                    for finding in high[:3]:
-                        print(f"  {YELLOW}- {finding['id']}: {finding['finding'][:80]}{RESET}")
+                if findings['cert_expired']:
+                    print(f"{RED}[!!!] Certificate EXPIRED{RESET}")
+                elif findings['cert_expiring_soon']:
+                    print(f"{YELLOW}[!] Certificate expiring soon{RESET}")
                 
-                return True, critical, high, medium
+                return findings
+            else:
+                print(f"{YELLOW}[!] JSON output not found{RESET}")
+                return None
         else:
             print(f"{RED}[!] Scan failed{RESET}")
             if not verbose and result.stderr:
-                print(f"{RED}{result.stderr}{RESET}")
-            return False, [], [], []
+                print(f"{RED}{result.stderr[:500]}{RESET}")
+            return None
     
     except Exception as e:
         print(f"{RED}[!] Error running testssl: {e}{RESET}")
-        return False, [], [], []
-
-def save_ssllist(targets, results):
-    """Save SSL scan summary to ssllist.txt"""
-    output_file = "ssllist.txt"
-    
-    try:
-        with open(output_file, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("SSLSeek - SSL/TLS Security Scan Summary\n")
-            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 80 + "\n\n")
-            
-            for target, result in zip(targets, results):
-                success, critical, high, medium = result
-                f.write(f"\nTarget: {target}\n")
-                f.write(f"Status: {'SUCCESS' if success else 'FAILED'}\n")
-                
-                if critical:
-                    f.write(f"CRITICAL Findings: {len(critical)}\n")
-                    for finding in critical:
-                        f.write(f"  - {finding['id']}: {finding['finding']}\n")
-                
-                if high:
-                    f.write(f"HIGH Findings: {len(high)}\n")
-                
-                if medium:
-                    f.write(f"MEDIUM Findings: {len(medium)}\n")
-                
-                f.write("\n" + "-" * 80 + "\n")
-        
-        print(f"{GREEN}[+] Summary saved to: {output_file}{RESET}")
-        return output_file
-    
-    except Exception as e:
-        print(f"{RED}[!] Error saving summary: {e}{RESET}")
         return None
 
 def save_ssl_guide():
@@ -1123,33 +1292,55 @@ Examples:
         targets = [args.target]
     
     # Scan targets
-    results = []
+    all_results = []
     completed = 0
     for target in targets:
         completed += 1
         print(f"\n{CYAN}[*] Scanning {completed}/{len(targets)}: {target}{RESET}")
-        result = run_testssl_scan(target, testssl_path, args.full, args.verbose)
-        results.append(result)
+        findings = run_testssl_scan(target, testssl_path, args.full, args.verbose)
+        
+        if findings:
+            all_results.append(findings)
         
         # Progress indicator (after each target completes)
         if completed < len(targets):
             print(f"\n{CYAN}[*] Progress: {completed}/{len(targets)} targets completed{RESET}\n")
     
-    # Save summary
-    print(f"\n{CYAN}[*] Generating summary and guide...{RESET}")
-    save_ssllist(targets, results)
+    # Organize findings by vulnerability type
+    if all_results:
+        print(f"\n{CYAN}[*] Organizing findings by vulnerability type...{RESET}")
+        organize_findings_by_vulnerability(all_results)
+        
+        print(f"\n{CYAN}[*] Generating master summary...{RESET}")
+        generate_master_summary(all_results)
+    else:
+        print(f"\n{YELLOW}[!] No results to organize{RESET}")
+    
+    # Generate guide
+    print(f"\n{CYAN}[*] Generating SSL/TLS attack guide...{RESET}")
     save_ssl_guide()
     
     # Final summary
     print(f"\n{GREEN}{BOLD}[+] SSLSeek scan complete!{RESET}")
-    print(f"{CYAN}[*] Results saved to: ssllist.txt{RESET}")
-    print(f"{CYAN}[*] Attack guide saved to: SSL_ATTACK_GUIDE.txt{RESET}")
+    print(f"{CYAN}[*] Master summary: ssllist.txt{RESET}")
+    print(f"{CYAN}[*] Attack guide: SSL_ATTACK_GUIDE.txt{RESET}")
+    print(f"{CYAN}[*] Organized findings in vulnerability-specific folders{RESET}")
     
-    # Check for critical findings
-    total_critical = sum(len(r[1]) for r in results if r[0])
-    if total_critical > 0:
-        print(f"\n{RED}{BOLD}[!!!] {total_critical} CRITICAL VULNERABILITIES FOUND!{RESET}")
-        print(f"{YELLOW}[*] Review ssllist.txt and testssl JSON output for details{RESET}")
+    # Count critical findings
+    if all_results:
+        total_critical = sum(
+            sum(1 for f in findings for sev in f.get('severity', '') if sev == 'CRITICAL')
+            for result in all_results
+            for findings in result.get('vulnerabilities', {}).values()
+        )
+        
+        total_vulns = sum(len(r.get('vulnerabilities', {})) for r in all_results)
+        
+        if total_critical > 0:
+            print(f"\n{RED}{BOLD}[!!!] {total_critical} CRITICAL FINDINGS!{RESET}")
+        
+        print(f"{YELLOW}[*] Total unique vulnerability types: {total_vulns}{RESET}")
+        print(f"{YELLOW}[*] Targets with findings: {len(all_results)}{RESET}")
 
 if __name__ == '__main__':
     main()
