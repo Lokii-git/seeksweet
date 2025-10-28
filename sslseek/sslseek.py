@@ -182,6 +182,12 @@ def parse_testssl_output(json_file, target):
         with open(json_file, 'r') as f:
             data = json.load(f)
         
+        # Extract actual target from JSON if available (testssl includes it in first entry)
+        if data and len(data) > 0 and isinstance(data[0], dict):
+            json_target = data[0].get('targetHost', '') or data[0].get('ip', '')
+            if json_target and json_target != 'target.com':
+                findings['target'] = json_target
+        
         for item in data:
             if not isinstance(item, dict):
                 continue
