@@ -23,6 +23,17 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# Import seek_utils for finding IP list files
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from seek_utils import find_ip_list
+except ImportError:
+    # Fallback if seek_utils not available
+    def find_ip_list(filename):
+        if os.path.exists(filename):
+            return os.path.abspath(filename)
+        raise SystemExit(f"Error: Could not find file '{filename}'")
+
 # Color codes for output
 GREEN = '\033[92m'
 YELLOW = '\033[93m'
@@ -1294,7 +1305,11 @@ Examples:
     targets = []
     if args.file:
         try:
-            with open(args.file, 'r') as f:
+            # Use seek_utils to find the IP list file
+            ip_list_path = find_ip_list(args.file)
+            print(f"{CYAN}[*] Using IP list: {ip_list_path}{RESET}")
+            
+            with open(ip_list_path, 'r') as f:
                 targets = [line.strip() for line in f if line.strip()]
             print(f"{GREEN}[+] Loaded {len(targets)} targets from file{RESET}")
         except Exception as e:
