@@ -462,6 +462,10 @@ def generate_reports(nmap_results: List[Dict], nuclei_findings: List[Dict]):
     
     # Add nuclei findings
     for finding in nuclei_findings:
+        # Skip if finding is not a dict (defensive coding)
+        if not isinstance(finding, dict):
+            continue
+            
         info = finding.get('info', {})
         severity = info.get('severity', '').upper()
         
@@ -530,6 +534,10 @@ def generate_reports(nmap_results: List[Dict], nuclei_findings: List[Dict]):
             all_vuln_ips.add(result['ip'])
     
     for finding in nuclei_findings:
+        # Skip if finding is not a dict
+        if not isinstance(finding, dict):
+            continue
+            
         host = finding.get('host', '')
         ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', host)
         if ip_match:
@@ -716,6 +724,10 @@ Examples:
     
     nuclei_vuln_ips = set()
     for finding in nuclei_findings:
+        # Skip if finding is not a dict
+        if not isinstance(finding, dict):
+            continue
+            
         host = finding.get('host', '')
         ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', host)
         if ip_match:
