@@ -45,7 +45,7 @@ def print_banner():
     print(banner)
 
 def check_testssl():
-    """Check if testssl.sh is available"""
+    """Check if testssl.sh is available, auto-install if missing"""
     print(f"{CYAN}[*] Checking for testssl.sh...{RESET}")
     
     # Common locations for testssl.sh
@@ -53,12 +53,18 @@ def check_testssl():
         '/usr/bin/testssl.sh',
         '/usr/local/bin/testssl.sh',
         '/opt/testssl.sh/testssl.sh',
+        './testssl.sh/testssl.sh',
         './testssl.sh',
         'testssl.sh'
     ]
     
     for path in testssl_paths:
         if os.path.exists(path):
+            # Make sure it's executable
+            try:
+                os.chmod(path, 0o755)
+            except:
+                pass
             print(f"{GREEN}[+] Found testssl.sh at: {path}{RESET}")
             return path
     
@@ -67,15 +73,67 @@ def check_testssl():
         result = subprocess.run(['which', 'testssl.sh'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0 and result.stdout.strip():
             path = result.stdout.strip()
+            # Make sure it's executable
+            try:
+                os.chmod(path, 0o755)
+            except:
+                pass
             print(f"{GREEN}[+] Found testssl.sh at: {path}{RESET}")
             return path
     except:
         pass
     
-    print(f"{RED}[!] testssl.sh not found!{RESET}")
-    print(f"{YELLOW}[*] Install with: git clone --depth 1 https://github.com/drwetter/testssl.sh.git{RESET}")
-    print(f"{YELLOW}[*] Or download from: https://testssl.sh/{RESET}")
-    return None
+    # testssl.sh not found - offer to install
+    print(f"{YELLOW}[!] testssl.sh not found!{RESET}")
+    print(f"{CYAN}[*] Would you like to auto-install testssl.sh? (y/n){RESET}")
+    
+    try:
+        response = input().strip().lower()
+        if response in ['y', 'yes']:
+            return install_testssl()
+        else:
+            print(f"{YELLOW}[*] Manual installation instructions:{RESET}")
+            print(f"{YELLOW}    git clone --depth 1 https://github.com/drwetter/testssl.sh.git{RESET}")
+            print(f"{YELLOW}    Or download from: https://testssl.sh/{RESET}")
+            return None
+    except (KeyboardInterrupt, EOFError):
+        print(f"\n{YELLOW}[!] Installation cancelled{RESET}")
+        return None
+
+def install_testssl():
+    """Auto-install testssl.sh from GitHub"""
+    print(f"{CYAN}[*] Installing testssl.sh from GitHub...{RESET}")
+    
+    try:
+        # Clone testssl.sh repository
+        cmd = ['git', 'clone', '--depth', '1', 'https://github.com/drwetter/testssl.sh.git']
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            print(f"{RED}[!] Failed to clone testssl.sh repository{RESET}")
+            print(f"{RED}    Error: {result.stderr}{RESET}")
+            return None
+        
+        # Verify installation
+        testssl_path = './testssl.sh/testssl.sh'
+        if os.path.exists(testssl_path):
+            # Make it executable
+            os.chmod(testssl_path, 0o755)
+            print(f"{GREEN}[+] Successfully installed testssl.sh at: {testssl_path}{RESET}")
+            return testssl_path
+        else:
+            print(f"{RED}[!] Installation failed - testssl.sh not found after clone{RESET}")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        print(f"{RED}[!] Installation timed out{RESET}")
+        return None
+    except FileNotFoundError:
+        print(f"{RED}[!] git command not found - please install git first{RESET}")
+        return None
+    except Exception as e:
+        print(f"{RED}[!] Installation failed: {e}{RESET}")
+        return None
 
 def generate_testssl_command(target, testssl_path, full_scan=False, output_file=None):
     """Generate testssl.sh command"""
@@ -157,6 +215,13 @@ def parse_testssl_output(json_file):
 def run_testssl_scan(target, testssl_path, full_scan=False, verbose=False):
     """Run testssl.sh scan"""
     output_file = f"testssl_{target.replace(':', '_').replace('/', '_')}.json"
+    
+    # Ensure testssl.sh is executable before running
+    try:
+        if os.path.exists(testssl_path):
+            os.chmod(testssl_path, 0o755)
+    except Exception as e:
+        print(f"{YELLOW}[!] Warning: Could not set executable permissions: {e}{RESET}")
     
     cmd = generate_testssl_command(target, testssl_path, full_scan, output_file)
     
