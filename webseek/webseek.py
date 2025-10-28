@@ -16,6 +16,8 @@ Features:
 - Security headers analysis
 - Automatic template updates
 - Markdown report generation with organized results
+- Intelligent filtering to exclude noisy/informational findings
+- Categorized notable findings report (CVE, Auth, SSL/TLS, etc.)
 
 Usage:
     ./webseek-v2.py                        # Full Nuclei scan (all templates)
@@ -30,6 +32,9 @@ Output:
     findings.json           - JSON export of all findings
     findings.txt            - Human-readable findings summary
     vulnerable_hosts.txt    - List of vulnerable hosts
+    NOTABLE_FINDINGS.txt    - Filtered, categorized actionable findings (NEW!)
+    CRITICAL_FINDINGS.txt   - High/Critical priority vulnerabilities
+    IP_TO_VULNS.txt         - Vulnerabilities organized by IP
 """
 
 import subprocess
@@ -78,6 +83,39 @@ SEVERITY_COLORS = {
     'high': MAGENTA,
     'critical': RED
 }
+
+# Findings to exclude (too noisy/informational for pentest reports)
+EXCLUDE_FINDINGS = {
+    'addeventlistener-detect',
+    'apache-detect',
+    'aspnet-version-detect',
+    'cookies-without-httponly',
+    'cookies-without-httponly-secure',  
+    'cookies-without-secure',
+    'default-windows-server-page',
+    'email-extractor',
+    'favicon-detect',
+    'fingerprinthub-web-fingerprints',
+    'form-detection',
+    'index.md',
+    'microsoft-iis-version',
+    'missing-cookie-samesite-strict',
+    'missing-sri',
+    'mixed-passive-content',
+    'old-copyright',
+    'openssh-detect',
+    'options-method',
+    'robots-txt',
+    'robots-txt-endpoint',
+    'ssl-dns-names',
+    'ssl-issuer',
+    'tech-detect',
+    'tls-version',
+    'tomcat-detect',
+    'waf-detect',
+    'xss-fuzz',  # Usually false positives
+}
+
 
 
 def print_banner():
@@ -509,7 +547,115 @@ def generate_ip_to_vuln_report(vuln_groups, output_file='IP_TO_VULNS.txt'):
     print(f"{CYAN}[+] IP-to-vulnerability mapping saved to: {output_file}{RESET}")
 
 
+def generate_notable_findings_report(vuln_groups, output_file='NOTABLE_FINDINGS.txt'):
+    """Generate filtered report excluding noisy/informational findings
+    
+    This report focuses on actionable findings for pentest reports by:
+    - Excluding version detection and fingerprinting
+    - Removing informational cookie/header flags  
+    - Filtering out common tech detection
+    - Categorizing findings by type (CVE, Auth, SSL/TLS, etc.)
+    """
+    
+    # Filter out excluded findings
+    notable_vulns = {k: v for k, v in vuln_groups.items() 
+                     if k not in EXCLUDE_FINDINGS}
+    
+    if not notable_vulns:
+        print(f"{YELLOW}[!] No notable findings after filtering{RESET}")
+        return
+    
+    # Categorize findings
+    categorized = {
+        'CVE': {},
+        'Authentication': {},
+        'SSL/TLS': {},
+        'Configuration': {},
+        'Information Disclosure': {},
+        'Network Services': {},
+    }
+    
+    for template_id, data in notable_vulns.items():
+        # Categorize based on template ID patterns
+        if template_id.startswith('CVE-'):
+            categorized['CVE'][template_id] = data
+        elif any(x in template_id for x in ['login', 'auth', 'password', 'credential']):
+            categorized['Authentication'][template_id] = data
+        elif any(x in template_id for x in ['ssl', 'tls', 'cert', 'cipher']):
+            categorized['SSL/TLS'][template_id] = data
+        elif any(x in template_id for x in ['smb', 'ssh', 'rdp', 'snmp', 'ldap', 'mysql', 'pgsql', 'smtp', 'nfs', 'msmq']):
+            categorized['Network Services'][template_id] = data
+        elif any(x in template_id for x in ['disclosure', 'leak', 'trace', 'stacktrace', 'exposure']):
+            categorized['Information Disclosure'][template_id] = data
+        else:
+            categorized['Configuration'][template_id] = data
+    
+    # Calculate stats
+    total_notable = sum(len(category) for category in categorized.values())
+    total_ips = set()
+    for category in categorized.values():
+        for data in category.values():
+            total_ips.update(data['ips'])
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write("="*100 + "\n")
+        f.write("NOTABLE NUCLEI FINDINGS - FILTERED REPORT\n")
+        f.write("Excludes: Informational/Detection findings, Version detection, Cookie flags, etc.\n")
+        f.write("="*100 + "\n\n")
+        
+        f.write(f"Total Notable Findings: {total_notable}\n")
+        f.write(f"Affected IPs: {len(total_ips)}\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        # Write categorized findings
+        for category_name, category_findings in categorized.items():
+            if not category_findings:
+                continue
+            
+            f.write("\n" + "="*100 + "\n")
+            f.write(f"{category_name.upper()}\n")
+            f.write("="*100 + "\n\n")
+            
+            # Sort by severity and number of affected hosts
+            severity_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4}
+            sorted_findings = sorted(category_findings.items(), 
+                                   key=lambda x: (severity_order.get(x[1]['info'].get('severity', 'info').lower(), 5), 
+                                                 -len(x[1]['ips'])))
+            
+            for template_id, data in sorted_findings:
+                info = data['info']
+                severity = info.get('severity', 'unknown').upper()
+                name = info.get('name', 'Unknown')
+                description = info.get('description', 'No description available')
+                ips = sorted(data['ips'])
+                
+                f.write(f"[{template_id}]\n")
+                f.write(f"  Name: {name}\n")
+                f.write(f"  Severity: {severity}\n")
+                f.write(f"  Count: {len(ips)}\n")
+                f.write(f"  Affected IPs: {', '.join(ips)}\n")
+                
+                # Truncate description if too long
+                if description:
+                    desc_clean = description.replace('\n', ' ').strip()[:300]
+                    f.write(f"  Description: {desc_clean}\n")
+                
+                # Add references if available
+                references = info.get('reference', [])
+                if references:
+                    if isinstance(references, list):
+                        f.write(f"  References: {references[0]}\n")
+                    else:
+                        f.write(f"  References: {references}\n")
+                
+                f.write("\n")
+    
+    print(f"{GREEN}[+] Notable findings report saved to: {output_file}{RESET}")
+    print(f"{GREEN}    (Filtered from {len(vuln_groups)} to {total_notable} actionable findings){RESET}")
+
+
 def generate_summary(findings):
+
     """Generate human-readable summary of findings"""
     if not findings:
         print(f"{GREEN}[+] No vulnerabilities found!{RESET}")
@@ -564,6 +710,9 @@ def generate_summary(findings):
     
     # IP-to-vulnerability mapping
     generate_ip_to_vuln_report(vuln_groups)
+    
+    # Notable findings (filtered, categorized)
+    generate_notable_findings_report(vuln_groups)
     
     # Write findings summary (legacy format)
     with open('findings.txt', 'w', encoding='utf-8') as f:
