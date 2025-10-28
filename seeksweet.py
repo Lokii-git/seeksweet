@@ -655,6 +655,9 @@ def run_seek_tool(tool, target_file=None):
     elif tool['name'] == 'WebSeek':
         # WebSeek with unlimited timeout for large scans
         cmd.extend([target_file, '-v', '--max-scan-time', '0'])
+    elif tool['name'] == 'SSLSeek':
+        # SSLSeek requires -f flag for file input
+        cmd.extend(['-f', target_file, '-v'])
     else:
         # Tools that use positional argument
         cmd.extend([target_file, '-v'])
