@@ -289,7 +289,7 @@ SEEK_TOOLS = [
         'description': 'SSL/TLS security scanner wrapper with comprehensive vulnerability guide',
         'why': 'Identify SSL/TLS misconfigurations, weak ciphers, and critical vulnerabilities (Heartbleed, POODLE, etc.)',
         'outputs': ['ssllist.txt', 'SSL_ATTACK_GUIDE.txt', 'testssl_*.json'],
-        'typical_args': 'target.com --full',
+        'typical_args': '-f iplist.txt --full',
         'new_features': 'testssl.sh wrapper with 10+ CVE checks + attack guide'
     },
     {
