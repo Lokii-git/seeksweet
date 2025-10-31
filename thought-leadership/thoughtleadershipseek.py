@@ -119,6 +119,13 @@ def resolve_domain(domain):
 def check_url(url, timeout=5):
     """Check if a URL is accessible"""
     try:
+        # Disable SSL warnings for self-signed certificates during reconnaissance
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # Note: SSL verification is disabled for reconnaissance purposes to detect
+        # sites with self-signed or expired certificates. In production, consider
+        # adding a --verify-ssl flag to control this behavior.
         response = requests.get(url, timeout=timeout, verify=False, allow_redirects=True)
         return response.status_code, response.url, len(response.content)
     except Exception as e:
@@ -178,7 +185,17 @@ def discover_thought_leadership(domain, verbose=False):
         print(f"{CYAN}[*] Checking social media presence...{RESET}")
     
     # Extract company/org name from domain
-    org_name = domain.split('.')[0]
+    # Handle subdomains by taking the second-to-last part for common TLDs
+    domain_parts = domain.split('.')
+    if len(domain_parts) >= 3 and domain_parts[-2] in ['co', 'com', 'gov', 'edu', 'org', 'net']:
+        # e.g., blog.company.co.uk -> company
+        org_name = domain_parts[-3]
+    elif len(domain_parts) >= 2:
+        # e.g., blog.company.com -> company, or company.com -> company
+        org_name = domain_parts[-2]
+    else:
+        # Single part domain, use as-is
+        org_name = domain_parts[0]
     
     for platform in SOCIAL_PLATFORMS:
         platform_domain = platform.split('.')[0]
