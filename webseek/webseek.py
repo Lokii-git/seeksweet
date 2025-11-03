@@ -302,26 +302,6 @@ def run_nuclei_scan(target_file, args):
         return False
 
 
-def parse_json_results(json_file):
-    """Parse Nuclei JSON output and generate summary"""
-    if not os.path.exists(json_file):
-        print(f"{YELLOW}[!] No JSON results found at {json_file}{RESET}")
-        return None
-    
-    findings = []
-    try:
-        with open(json_file, 'r') as f:
-            for line in f:
-                if line.strip():
-                    finding = json.loads(line)
-                    findings.append(finding)
-    except Exception as e:
-        print(f"{RED}[!] Error parsing JSON results: {e}{RESET}")
-        return None
-    
-    return findings
-
-
 def extract_ip(host):
     """Extract IP address from host URL"""
     import re
