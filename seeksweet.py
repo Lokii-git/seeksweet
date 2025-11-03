@@ -1176,8 +1176,15 @@ def main():
         except KeyboardInterrupt:
             print(f"\n\n{YELLOW}[!] Interrupted by user. Exiting...{RESET}\n")
             break
+        except EOFError:
+            print(f"\n\n{YELLOW}[!] End of input. Exiting...{RESET}\n")
+            break
         except Exception as e:
-            print(f"\n{RED}[!] Error: {str(e)}{RESET}\n")
+            error_msg = str(e).strip()
+            if error_msg:
+                print(f"\n{RED}[!] Error: {error_msg}{RESET}\n")
+            else:
+                print(f"\n{RED}[!] Unknown error occurred{RESET}\n")
 
 
 if __name__ == '__main__':
