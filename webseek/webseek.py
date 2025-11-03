@@ -654,11 +654,44 @@ def generate_notable_findings_report(vuln_groups, output_file='NOTABLE_FINDINGS.
     print(f"{GREEN}    (Filtered from {len(vuln_groups)} to {total_notable} actionable findings){RESET}")
 
 
-def generate_summary(findings):
+def parse_json_results(json_file):
+    """Parse Nuclei JSON results from file"""
+    if not os.path.exists(json_file):
+        print(f"{YELLOW}[!] Warning: Results file not found: {json_file}{RESET}")
+        return None
+    
+    try:
+        findings = []
+        with open(json_file, 'r', encoding='utf-8') as f:
+            # Nuclei outputs one JSON object per line
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    finding = json.loads(line)
+                    findings.append(finding)
+                except json.JSONDecodeError as e:
+                    print(f"{YELLOW}[!] Warning: Invalid JSON on line {line_num}: {e}{RESET}")
+                    continue
+        
+        print(f"{GREEN}[+] Parsed {len(findings)} findings from {json_file}{RESET}")
+        return findings
+    
+    except Exception as e:
+        print(f"{RED}[!] Error reading results file {json_file}: {e}{RESET}")
+        return None
 
+
+def generate_summary(findings):
     """Generate human-readable summary of findings"""
     if not findings:
         print(f"{GREEN}[+] No vulnerabilities found!{RESET}")
+        return
+    
+    # Ensure findings is a list
+    if not isinstance(findings, list):
+        print(f"{RED}[!] Error: Expected findings to be a list, got {type(findings)}{RESET}")
         return
     
     # Count by severity
@@ -667,6 +700,11 @@ def generate_summary(findings):
     templates_triggered = set()
     
     for finding in findings:
+        # Ensure finding is a dictionary
+        if not isinstance(finding, dict):
+            print(f"{YELLOW}[!] Warning: Skipping invalid finding (not a dict): {type(finding)}{RESET}")
+            continue
+            
         severity = finding.get('info', {}).get('severity', 'unknown').lower()
         severity_counts[severity] = severity_counts.get(severity, 0) + 1
         
