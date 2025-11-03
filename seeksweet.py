@@ -667,8 +667,10 @@ def run_seek_tool(tool, target_file=None):
     start_time = datetime.now()
     
     try:
-        # Run the tool
-        result = subprocess.run(cmd, cwd=script_path.parent, capture_output=False, text=True)
+        # Run the tool with explicit stdin=DEVNULL to prevent stdin consumption
+        result = subprocess.run(cmd, cwd=script_path.parent, 
+                              capture_output=False, text=True, 
+                              stdin=subprocess.DEVNULL)
         
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -1176,10 +1178,12 @@ def main():
             elif 1 <= choice_num <= len(SEEK_TOOLS):
                 tool = SEEK_TOOLS[choice_num - 1]
                 run_seek_tool(tool)
+                
+                # Wait for user to review output before returning to menu
                 try:
                     input(f"\n{YELLOW}Press Enter to return to menu...{RESET}")
                 except (EOFError, KeyboardInterrupt):
-                    print()  # Just add a newline and continue to menu
+                    print()  # Just add a newline and continue
             else:
                 print(f"\n{RED}[!] Invalid option. Please try again.{RESET}\n")
         
