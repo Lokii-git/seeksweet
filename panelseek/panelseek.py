@@ -495,12 +495,145 @@ def save_panel_details(panels: List[Dict], filename: str = "panel_details.txt") 
         return False
 
 
+def check_go_installed():
+    """Check if Go is installed and in PATH"""
+    try:
+        result = subprocess.run(['go', 'version'], 
+                              capture_output=True, 
+                              text=True,
+                              timeout=5)
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            print(f"[+] Go found: {version}")
+            return True
+        else:
+            print("[!] Go not found in PATH")
+            return False
+    except FileNotFoundError:
+        print("[!] Go not found in PATH")
+        return False
+    except subprocess.TimeoutExpired:
+        print("[!] Go version check timed out")
+        return False
+    except Exception as e:
+        print(f"[!] Error checking Go installation: {e}")
+        return False
+
+
+def check_gowitness_installed():
+    """Check if gowitness is installed"""
+    try:
+        result = subprocess.run(['gowitness', '--version'], 
+                              capture_output=True, 
+                              text=True,
+                              timeout=10)
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            print(f"[+] gowitness found: {version}")
+            return True
+        else:
+            return False
+    except FileNotFoundError:
+        return False
+    except subprocess.TimeoutExpired:
+        print("[!] gowitness version check timed out")
+        return False
+    except Exception as e:
+        print(f"[!] Error checking gowitness: {e}")
+        return False
+
+
+def install_gowitness():
+    """Install gowitness using go install"""
+    print("[*] Installing gowitness...")
+    try:
+        result = subprocess.run([
+            'go', 'install', 'github.com/sensepost/gowitness@latest'
+        ], capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            print("[+] gowitness installed successfully")
+            return True
+        else:
+            print(f"[!] Error installing gowitness: {result.stderr}")
+            return False
+    except subprocess.TimeoutExpired:
+        print("[!] gowitness installation timed out")
+        return False
+    except Exception as e:
+        print(f"[!] Error installing gowitness: {e}")
+        return False
+
+
+def run_gowitness_screenshots(panellist_file, delay=15):
+    """Run gowitness to capture screenshots of admin panels"""
+    if not os.path.exists(panellist_file):
+        print(f"[!] Panel list file not found: {panellist_file}")
+        return False
+    
+    # Check if file has content
+    with open(panellist_file, 'r') as f:
+        urls = [line.strip() for line in f if line.strip()]
+    
+    if not urls:
+        print("[!] No URLs found in panel list file")
+        return False
+    
+    print(f"\n[*] Capturing screenshots of {len(urls)} admin panels with gowitness...")
+    print(f"[*] Using delay of {delay} seconds for slower systems...")
+    
+    # Create screenshots directory
+    screenshots_dir = "screenshots"
+    os.makedirs(screenshots_dir, exist_ok=True)
+    
+    try:
+        # Run gowitness with file input and delay
+        cmd = [
+            'gowitness', 'file',
+            '--source', panellist_file,
+            '--destination', screenshots_dir,
+            '--delay', str(delay),
+            '--timeout', '30',
+            '--threads', '5'
+        ]
+        
+        print(f"[*] Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=False, text=True, timeout=600)
+        
+        if result.returncode == 0:
+            print(f"[+] Screenshots captured successfully in '{screenshots_dir}' directory")
+            
+            # Count captured screenshots
+            screenshot_files = [f for f in os.listdir(screenshots_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
+            print(f"[+] Total screenshots captured: {len(screenshot_files)}")
+            
+            # List some examples
+            if screenshot_files:
+                print("\n[+] Screenshot examples:")
+                for i, screenshot in enumerate(screenshot_files[:5]):
+                    print(f"    - {screenshot}")
+                if len(screenshot_files) > 5:
+                    print(f"    ... and {len(screenshot_files) - 5} more")
+            
+            return True
+        else:
+            print(f"[!] gowitness failed with exit code {result.returncode}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("[!] gowitness screenshot capture timed out")
+        return False
+    except Exception as e:
+        print(f"[!] Error running gowitness: {e}")
+        return False
+
+
 def print_banner():
     """Print PanelSeek banner"""
     banner = """
 ╔══════════════════════════════════════════════════════════╗
-║                     PanelSeek v1.0                       ║
-║            Exposed Admin Panel Discovery Tool            ║
+║                     PanelSeek v2.0                       ║
+║        Admin Panel Discovery + Screenshot Capture        ║
 ║              github.com/Lokii-git/seeksweet              ║
 ╚══════════════════════════════════════════════════════════╝
 """
@@ -518,6 +651,8 @@ Examples:
   %(prog)s -w 20 -t 2 -v                # 20 workers, 2s timeout, verbose
   %(prog)s --quick                      # Quick scan (fewer paths)
   %(prog)s --full                       # Full scan (all paths)
+  %(prog)s --delay 10                   # Use 10 second delay for gowitness (faster systems)
+  %(prog)s --no-screenshots             # Skip screenshot capture
         """
     )
     parser.add_argument('-f', '--file', default='iplist.txt', help='Input file with IPs (default: iplist.txt)')
@@ -529,6 +664,9 @@ Examples:
     parser.add_argument('--quick', action='store_true', help='Quick scan (check only / and /admin)')
     parser.add_argument('--full', action='store_true', help='Full scan (check all paths)')
     parser.add_argument('--panellist', default='panellist.txt', help='Panel list file (default: panellist.txt)')
+    parser.add_argument('--screenshots', action='store_true', help='Capture screenshots of admin panels using gowitness')
+    parser.add_argument('--delay', type=int, default=15, help='Delay between requests for gowitness (default: 15 seconds)')
+    parser.add_argument('--no-screenshots', action='store_true', help='Skip screenshot capture even if gowitness is available')
     
     try:
         args = parser.parse_args()
@@ -678,6 +816,33 @@ Examples:
     if hosts_with_panels:
         save_panel_list(hosts_with_panels, args.panellist)
         save_panel_details(hosts_with_panels, args.output)
+        
+        # Screenshot capture with gowitness
+        if not args.no_screenshots:
+            print("\n" + "="*70)
+            print("GOWITNESS SCREENSHOT CAPTURE")
+            print("="*70)
+            
+            # Check if Go is installed
+            if not check_go_installed():
+                print("[!] Go is required for gowitness. Please install Go and add it to your PATH.")
+                print("[!] Download Go from: https://golang.org/dl/")
+                print("[!] Skipping screenshot capture...")
+            else:
+                # Check if gowitness is installed
+                if not check_gowitness_installed():
+                    print("[*] gowitness not found. Attempting to install...")
+                    if install_gowitness():
+                        # Try to run gowitness after installation
+                        run_gowitness_screenshots(args.panellist, args.delay)
+                    else:
+                        print("[!] Failed to install gowitness. Skipping screenshot capture...")
+                        print("[!] You can manually install with: go install github.com/sensepost/gowitness@latest")
+                else:
+                    # gowitness is available, run screenshot capture
+                    run_gowitness_screenshots(args.panellist, args.delay)
+        else:
+            print("\n[*] Screenshot capture disabled with --no-screenshots")
     
     sys.exit(0)
 
