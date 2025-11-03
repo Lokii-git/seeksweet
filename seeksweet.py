@@ -732,7 +732,10 @@ def run_all_sequential(target_file=None):
             fail_count += 1
         
         if tool != SEEK_TOOLS[-1]:  # Not the last tool
-            input(f"\n{YELLOW}Press Enter to continue to next tool...{RESET}")
+            try:
+                input(f"\n{YELLOW}Press Enter to continue to next tool...{RESET}")
+            except (EOFError, KeyboardInterrupt):
+                print()  # Just add a newline and continue
     
     print(f"\n{BOLD}{'='*80}{RESET}")
     print(f"{CYAN}{BOLD}Sequential Scan Complete{RESET}")
@@ -962,7 +965,10 @@ def run_enumeration_phase_sequential(target_file=None):
         # Don't prompt after last tool
         if tool != enumeration_tools[-1]:
             print(f"\n{YELLOW}{'='*80}{RESET}")
-            input(f"{YELLOW}Press Enter to continue to next tool...{RESET}")
+            try:
+                input(f"{YELLOW}Press Enter to continue to next tool...{RESET}")
+            except (EOFError, KeyboardInterrupt):
+                print()  # Just add a newline and continue
     
     print(f"\n{BOLD}{'='*80}{RESET}")
     print(f"{CYAN}{BOLD}Enumeration Phase Complete{RESET}")
@@ -1043,7 +1049,10 @@ def run_alive_check():
     except Exception as e:
         print(f"{RED}[!] Error running alive check: {e}{RESET}\n")
     
-    input(f"{YELLOW}Press Enter to return to menu...{RESET}")
+    try:
+        input(f"{YELLOW}Press Enter to return to menu...{RESET}")
+    except (EOFError, KeyboardInterrupt):
+        print()  # Just add a newline and continue
 
 
 def view_results_summary():
@@ -1167,7 +1176,10 @@ def main():
             elif 1 <= choice_num <= len(SEEK_TOOLS):
                 tool = SEEK_TOOLS[choice_num - 1]
                 run_seek_tool(tool)
-                input(f"\n{YELLOW}Press Enter to return to menu...{RESET}")
+                try:
+                    input(f"\n{YELLOW}Press Enter to return to menu...{RESET}")
+                except (EOFError, KeyboardInterrupt):
+                    print()  # Just add a newline and continue to menu
             else:
                 print(f"\n{RED}[!] Invalid option. Please try again.{RESET}\n")
         
