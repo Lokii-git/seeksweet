@@ -1017,9 +1017,9 @@ Examples:
                        action='store_true',
                        help='Verbose output (show all hosts)')
     
-    parser.add_argument('--show-netexec',
+    parser.add_argument('--no-raw-output',
                        action='store_true',
-                       help='Show raw NetExec output for debugging')
+                       help='Hide raw NetExec output (show only parsed results)')
     
     args = parser.parse_args()
     
@@ -1055,8 +1055,8 @@ Examples:
         print(f"{Colors.FAIL}[!] NetExec bulk scan failed: {error}{Colors.ENDC}")
         return 1
     
-    # Show raw NetExec output if requested
-    if args.show_netexec:
+    # Always show raw NetExec output unless disabled
+    if not args.no_raw_output:
         print(f"\n{Colors.OKGREEN}[+] Raw NetExec Output:{Colors.ENDC}")
         print("=" * 80)
         print(netexec_output)
@@ -1131,7 +1131,7 @@ Examples:
     print(f"{Colors.OKBLUE}[*] Total hosts scanned: {len(results)}{Colors.ENDC}")
     print(f"{Colors.OKBLUE}[*] Hosts with SMB: {smb_found}{Colors.ENDC}")
     
-    # Show results
+    # Show results with enhanced details
     for result in results:
         if result['smb_enabled']:
             # Determine confidence
@@ -1142,31 +1142,66 @@ Examples:
             else:
                 confidence = f"{Colors.OKBLUE}[LOW]{Colors.ENDC}"
             
-            hostname_str = f" ({result['hostname']})" if result['hostname'] else ""
-            shares_str = f" - {len(result['shares'])} shares" if result['shares'] else ""
-            access_str = f" ({len(result['accessible_shares'])} accessible)" if result['accessible_shares'] else ""
-            null_str = f"{Colors.WARNING} [NULL SESSION]{Colors.ENDC}" if result['null_session'] else ""
-            guest_str = f"{Colors.WARNING} [GUEST ACCESS]{Colors.ENDC}" if result['guest_access'] else ""
+            # Build detailed info string
+            info_parts = []
             
-            # SMB signing status
-            signing_str = ""
+            # Hostname and domain
+            if result['hostname'] and result['hostname'] != 'Unknown':
+                if result['domain'] and result['domain'] != 'Unknown':
+                    info_parts.append(f"{result['hostname']}.{result['domain']}")
+                else:
+                    info_parts.append(f"{result['hostname']}")
+            
+            # OS info
+            if result['os'] and result['os'] != 'Unknown':
+                info_parts.append(f"OS: {result['os']}")
+            
+            # SMBv1 warning
+            if result['smbv1']:
+                info_parts.append(f"{Colors.FAIL}SMBv1: ENABLED{Colors.ENDC}")
+            
+            # Share count
+            if result['shares']:
+                info_parts.append(f"Shares: {len(result['shares'])}")
+                share_names = [s['name'] for s in result['shares']]
+                info_parts.append(f"({', '.join(share_names[:3])}{'...' if len(share_names) > 3 else ''})")
+            
+            # SMB signing status (detailed)
+            signing_info = ""
             if result['smb_signing']:
                 if result['smb_signing']['relay_vulnerable']:
-                    signing_str = f"{Colors.FAIL} [RELAY VULNERABLE]{Colors.ENDC}"
+                    if result['smb_signing']['signing_enabled']:
+                        signing_info = f"{Colors.WARNING}[SIGNING: Enabled but NOT Required - RELAY VULNERABLE]{Colors.ENDC}"
+                    else:
+                        signing_info = f"{Colors.FAIL}[SIGNING: DISABLED - RELAY VULNERABLE]{Colors.ENDC}"
                 elif result['smb_signing']['signing_required']:
-                    signing_str = f"{Colors.OKGREEN} [SIGNING REQUIRED]{Colors.ENDC}"
+                    signing_info = f"{Colors.OKGREEN}[SIGNING: REQUIRED - Protected]{Colors.ENDC}"
             
-            print(f"{confidence} {result['ip']}{hostname_str}{shares_str}{access_str}{null_str}{guest_str}{signing_str}")
+            # Session type
+            session_info = ""
+            if result['null_session']:
+                session_info = f"{Colors.WARNING}[NULL SESSION ALLOWED]{Colors.ENDC}"
+            elif result['guest_access']:
+                session_info = f"{Colors.WARNING}[GUEST ACCESS ALLOWED]{Colors.ENDC}"
+            
+            # Combine all info
+            info_str = " | ".join(filter(None, info_parts))
+            status_parts = [signing_info, session_info]
+            status_str = " ".join(filter(None, status_parts))
+            
+            print(f"{confidence} {result['ip']} - {info_str}")
+            if status_str:
+                print(f"    {status_str}")
             
             # Show interesting shares
             if result['interesting_shares']:
-                print(f"    {Colors.WARNING}★ Interesting: {', '.join(result['interesting_shares'])}{Colors.ENDC}")
+                print(f"    {Colors.WARNING}★ INTERESTING SHARES: {', '.join(result['interesting_shares'])}{Colors.ENDC}")
             
             # Show accessible shares
             if result['accessible_shares']:
                 for share in result['accessible_shares']:
-                    print(f"    {Colors.OKGREEN}✓ \\\\{result['ip']}\\{share['name']} "
-                         f"(Files: {share['files_found']}){Colors.ENDC}")
+                    print(f"    {Colors.OKGREEN}✓ ACCESSIBLE: \\\\{result['ip']}\\{share['name']} "
+                         f"(R:{share['readable']}, W:{share['writable']}, Files:{share['files_found']}){Colors.ENDC}")
         
         elif args.verbose:
             print(f"[ ] {result['ip']} - No SMB")
