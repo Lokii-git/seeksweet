@@ -1132,19 +1132,18 @@ Examples:
         
         results.append(result)
     
-    # Display critical findings summary instead of individual hosts
-    print(f"\n{Colors.OKGREEN}[+] SMB Assessment Summary:{Colors.ENDC}")
-    print(f"{Colors.OKBLUE}[*] Total hosts scanned: {len(results)}{Colors.ENDC}")
-    print(f"{Colors.OKBLUE}[*] Hosts with SMB: {smb_found}{Colors.ENDC}")
-    
-    # Critical findings
+    # Critical findings analysis
     smbv1_hosts = [r for r in results if r['smbv1']]
     signing_disabled = [r for r in results if r['smb_signing'] and r['smb_signing']['relay_vulnerable']]
     null_sessions = [r for r in results if r['null_session']]
     guest_access = [r for r in results if r['guest_access']]
     shares_found = [r for r in results if r['shares']]
     
-    print(f"\n{Colors.HEADER}🚨 CRITICAL SECURITY FINDINGS:{Colors.ENDC}")
+    # Only show critical findings section if there are actual findings
+    has_critical_findings = smbv1_hosts or signing_disabled or null_sessions or guest_access or shares_found
+    
+    if has_critical_findings:
+        print(f"\n{Colors.HEADER}🚨 CRITICAL SECURITY FINDINGS:{Colors.ENDC}")
     
     if smbv1_hosts:
         print(f"\n{Colors.FAIL}[!] SMBv1 ENABLED (Legacy Protocol - CRITICAL):{Colors.ENDC}")
@@ -1190,6 +1189,12 @@ Examples:
     if signing_required:
         print(f"\n{Colors.OKGREEN}[+] PROPERLY SECURED (SMB Signing Required):{Colors.ENDC}")
         print(f"    {Colors.OKGREEN}Total: {len(signing_required)} hosts{Colors.ENDC}")
+    
+    # If no critical findings, show a positive message
+    if not has_critical_findings:
+        print(f"\n{Colors.OKGREEN}✅ No critical SMB security issues detected!{Colors.ENDC}")
+        if signing_required:
+            print(f"{Colors.OKGREEN}All {len(signing_required)} SMB hosts appear to be properly secured.{Colors.ENDC}")
     
     # Rest of the processing...
     
