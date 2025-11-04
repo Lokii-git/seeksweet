@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-SMBSeek v1.0 - SMB Share Discovery and Enumeration Tool
+SMBSeek v2.0 - Modern SMB Discovery and Enumeration Tool
 
-Discovers hosts with SMB enabled and enumerates accessible shares.
-Tests for anonymous access, null sessions, and guest access.
+Discovers hosts with SMB enabled and performs comprehensive enumeration using NetExec.
+Features:
+- SMB signing detection (critical for relay attacks)
+- SMBv1 detection and warnings
+- Anonymous/null session testing
+- Share enumeration with permissions
+- Credential testing integration
 
 Author: Internal Red Team
-Date: October 2025
+Date: November 2025
 Platform: Kali Linux
+Dependencies: netexec (formerly crackmapexec)
 """
 
 import subprocess
@@ -58,10 +64,16 @@ def print_banner():
     """Print tool banner"""
     banner = f"""
 {Colors.OKCYAN}╔═══════════════════════════════════════════════════════════╗
-║                   SMBSeek v1.0                            ║
-║            SMB Share Discovery & Enumeration              ║
+║                   SMBSeek v2.0                            ║
+║       SMB Discovery + Signing Detection (NetExec)        ║
 ║              github.com/Lokii-git/seeksweet               ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.ENDC}
+
+{Colors.WARNING}🔍 Enhanced Features:{Colors.ENDC}
+{Colors.OKGREEN}  • SMB Signing Detection (Critical for Relay Attacks)
+  • SMBv1 Detection and Warnings
+  • Anonymous/Null Session Testing
+  • Modern NetExec-powered Enumeration{Colors.ENDC}
 """
     print(banner)
 
@@ -153,25 +165,25 @@ def get_hostname(ip: str) -> Optional[str]:
     except:
         return None
 
-def check_smbclient() -> bool:
+def check_netexec() -> bool:
     """
-    Check if smbclient is installed.
+    Check if netexec is installed.
     
     Returns:
-        True if smbclient is available, False otherwise
+        True if netexec is available, False otherwise
     """
     try:
-        subprocess.run(['smbclient', '--version'], 
+        subprocess.run(['netexec', '--version'], 
                       capture_output=True, 
                       timeout=5)
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
-def enumerate_shares_smbclient(ip: str, username: str = '', password: str = '', 
-                               timeout: int = 10) -> Tuple[Optional[List[Dict]], Optional[str]]:
+def enumerate_smb_netexec(ip: str, username: str = '', password: str = '', 
+                          timeout: int = 15) -> Tuple[Optional[Dict], Optional[str]]:
     """
-    Enumerate SMB shares using smbclient.
+    Enumerate SMB using NetExec for comprehensive assessment.
     
     Args:
         ip: Target IP address
@@ -180,16 +192,17 @@ def enumerate_shares_smbclient(ip: str, username: str = '', password: str = '',
         timeout: Command timeout in seconds
         
     Returns:
-        Tuple of (list of share dicts, error message)
+        Tuple of (smb_info dict, error message)
     """
-    shares = []
     
-    # Build smbclient command
+    # Build netexec command
+    cmd = ['netexec', 'smb', ip, '--shares']
+    
     if username:
-        cmd = ['smbclient', '-L', f'//{ip}', '-U', f'{username}%{password}', '-N']
+        cmd.extend(['-u', username, '-p', password])
     else:
-        # Try null session (no username/password)
-        cmd = ['smbclient', '-L', f'//{ip}', '-N']
+        # Test null session / anonymous access
+        cmd.extend(['-u', '', '-p', ''])
     
     try:
         result = subprocess.run(
@@ -199,65 +212,126 @@ def enumerate_shares_smbclient(ip: str, username: str = '', password: str = '',
             timeout=timeout
         )
         
-        output = result.stdout + result.stderr
-        
-        # Check for common errors
-        if 'NT_STATUS_ACCESS_DENIED' in output:
-            return None, 'Access Denied'
-        elif 'NT_STATUS_LOGON_FAILURE' in output:
-            return None, 'Logon Failure'
-        elif 'NT_STATUS_HOST_UNREACHABLE' in output:
-            return None, 'Host Unreachable'
-        elif 'Connection to' in output and 'failed' in output:
-            return None, 'Connection Failed'
-        
-        # Parse share list
-        in_share_section = False
-        for line in output.split('\n'):
-            line = line.strip()
-            
-            # Look for share section
-            if 'Sharename' in line and 'Type' in line:
-                in_share_section = True
-                continue
-            
-            # End of share section
-            if in_share_section and (line.startswith('Reconnecting') or 
-                                     line.startswith('Server') or 
-                                     line.startswith('Workgroup') or
-                                     not line):
-                if line.startswith('Server') or line.startswith('Workgroup'):
-                    in_share_section = False
-                continue
-            
-            # Parse share line
-            if in_share_section and line and not line.startswith('-'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    share_name = parts[0]
-                    share_type = parts[1]
-                    comment = ' '.join(parts[2:]) if len(parts) > 2 else ''
-                    
-                    shares.append({
-                        'name': share_name,
-                        'type': share_type,
-                        'comment': comment
-                    })
-        
-        if shares:
-            return shares, None
+        if result.returncode == 0 or result.stdout:
+            # Parse NetExec output
+            smb_info = parse_netexec_output(result.stdout, ip)
+            return smb_info, None
         else:
-            return None, 'No shares found or access denied'
+            error_msg = result.stderr.strip() if result.stderr else f"NetExec failed with return code {result.returncode}"
+            return None, error_msg
             
     except subprocess.TimeoutExpired:
-        return None, 'Timeout'
+        return None, f"NetExec timeout after {timeout} seconds"
     except Exception as e:
-        return None, str(e)
+        return None, f"NetExec error: {str(e)}"
+
+def parse_netexec_output(output: str, ip: str) -> Dict:
+    """
+    Parse NetExec output to extract SMB information.
+    
+    Args:
+        output: NetExec stdout
+        ip: Target IP
+        
+    Returns:
+        Dictionary with SMB information
+    """
+    smb_info = {
+        'ip': ip,
+        'hostname': 'Unknown',
+        'domain': 'Unknown',
+        'os': 'Unknown',
+        'smb_signing': {
+            'signing_enabled': False,
+            'signing_required': False,
+            'relay_vulnerable': True,
+            'error': None
+        },
+        'smbv1': False,
+        'protocol_versions': [],
+        'shares': [],
+        'authentication': 'Failed',
+        'errors': []
+    }
+    
+    lines = output.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Extract basic host info
+        if 'SMB' in line and ip in line:
+            # Parse NetExec SMB line format
+            # Example: SMB         192.168.1.100   445    DC01             [*] Windows 10.0 Build 17763 x64 (name:DC01) (domain:CONTOSO.LOCAL) (signing:True) (SMBv1:False)
+            
+            if '(name:' in line:
+                hostname_match = re.search(r'\(name:([^)]+)\)', line)
+                if hostname_match:
+                    smb_info['hostname'] = hostname_match.group(1)
+            
+            if '(domain:' in line:
+                domain_match = re.search(r'\(domain:([^)]+)\)', line)
+                if domain_match:
+                    smb_info['domain'] = domain_match.group(1)
+            
+            if 'Windows' in line:
+                os_match = re.search(r'Windows [^(]+', line)
+                if os_match:
+                    smb_info['os'] = os_match.group(0).strip()
+            
+            # Parse SMB signing status
+            if '(signing:' in line:
+                signing_match = re.search(r'\(signing:([^)]+)\)', line)
+                if signing_match:
+                    signing_status = signing_match.group(1).lower()
+                    if signing_status == 'true':
+                        smb_info['smb_signing']['signing_enabled'] = True
+                        smb_info['smb_signing']['signing_required'] = True  # Assume required if enabled
+                        smb_info['smb_signing']['relay_vulnerable'] = False
+                    elif signing_status == 'false':
+                        smb_info['smb_signing']['signing_enabled'] = False
+                        smb_info['smb_signing']['signing_required'] = False
+                        smb_info['smb_signing']['relay_vulnerable'] = True
+            
+            if '(SMBv1:' in line:
+                smbv1_match = re.search(r'\(SMBv1:([^)]+)\)', line)
+                if smbv1_match:
+                    smb_info['smbv1'] = smbv1_match.group(1).lower() == 'true'
+        
+        # Extract share information
+        elif line.startswith('SMB') and ('Disk' in line or 'IPC' in line or 'Print' in line):
+            # Parse share line format
+            # Example: SMB         192.168.1.100   445    DC01             ADMIN$                           Disk      Remote Admin
+            parts = line.split()
+            if len(parts) >= 6:
+                share_name = parts[4]
+                share_type = parts[5] if len(parts) > 5 else 'Unknown'
+                comment = ' '.join(parts[6:]) if len(parts) > 6 else ''
+                
+                share_info = {
+                    'name': share_name,
+                    'type': share_type,
+                    'comment': comment
+                }
+                smb_info['shares'].append(share_info)
+        
+        # Check for authentication status
+        elif '[+]' in line and 'Login successful' in line:
+            smb_info['authentication'] = 'Success'
+        elif '[-]' in line and any(term in line.lower() for term in ['login failed', 'authentication failed', 'access denied']):
+            smb_info['authentication'] = 'Failed'
+            smb_info['errors'].append(line)
+        elif '[+]' in line and 'Guest' in line:
+            smb_info['authentication'] = 'Guest'
+        elif '[+]' in line and 'Anonymous' in line:
+            smb_info['authentication'] = 'Anonymous'
+    
+    return smb_info
 
 def test_share_access(ip: str, share_name: str, username: str = '', 
                      password: str = '', timeout: int = 10) -> Dict:
     """
-    Test if a share is accessible and attempt to list contents.
+    Test if a share is accessible and attempt to list contents using NetExec.
     
     Args:
         ip: Target IP address
@@ -277,42 +351,43 @@ def test_share_access(ip: str, share_name: str, username: str = '',
         'error': None
     }
     
-    # Build smbclient command to list share contents
+    # Build NetExec command to test share access
     if username:
-        cmd = ['smbclient', f'//{ip}/{share_name}', '-U', f'{username}%{password}', 
-               '-c', 'ls']
+        cmd = ['netexec', 'smb', ip, '-u', username, '-p', password, '--shares', '--share', share_name]
     else:
-        cmd = ['smbclient', f'//{ip}/{share_name}', '-N', '-c', 'ls']
+        cmd = ['netexec', 'smb', ip, '-u', '', '-p', '', '--shares', '--share', share_name]
     
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            stdin=subprocess.DEVNULL
         )
         
         output = proc.stdout + proc.stderr
         
-        # Check for access
-        if 'NT_STATUS_ACCESS_DENIED' in output:
+        # Check for access patterns in NetExec output
+        if 'STATUS_ACCESS_DENIED' in output or 'Access Denied' in output:
             result['error'] = 'Access Denied'
-        elif 'NT_STATUS_BAD_NETWORK_NAME' in output:
+        elif 'STATUS_BAD_NETWORK_NAME' in output or 'Invalid share' in output:
             result['error'] = 'Invalid Share Name'
-        elif 'NT_STATUS_LOGON_FAILURE' in output:
+        elif 'STATUS_LOGON_FAILURE' in output or 'Login failed' in output:
             result['error'] = 'Logon Failure'
-        elif proc.returncode == 0 or 'blocks of size' in output:
+        elif 'READ' in output or 'WRITE' in output or proc.returncode == 0:
             result['accessible'] = True
-            result['readable'] = True
             
-            # Count files/directories
-            file_count = 0
-            for line in output.split('\n'):
-                # Look for file listings (lines with file attributes)
-                if re.match(r'\s+\S+\s+[DAH]+\s+\d+', line):
-                    file_count += 1
-            
-            result['files_found'] = file_count
+            # Check for read/write permissions
+            if 'READ' in output:
+                result['readable'] = True
+            if 'WRITE' in output:
+                result['writable'] = True
+                
+            # NetExec doesn't provide file counts directly, so we estimate based on output
+            # If we can access the share, assume some files are present
+            if result['readable']:
+                result['files_found'] = 1  # Conservative estimate
         else:
             result['error'] = 'Unknown error'
     
@@ -323,72 +398,9 @@ def test_share_access(ip: str, share_name: str, username: str = '',
     
     return result
 
-def enumerate_shares_rpcclient(ip: str, username: str = '', password: str = '', 
-                                timeout: int = 10) -> Tuple[Optional[List[Dict]], Optional[str]]:
-    """
-    Enumerate SMB shares using rpcclient (alternative method).
-    
-    Args:
-        ip: Target IP address
-        username: Username for authentication
-        password: Password for authentication
-        timeout: Command timeout in seconds
-        
-    Returns:
-        Tuple of (list of share dicts, error message)
-    """
-    shares = []
-    
-    # Build rpcclient command
-    if username:
-        cmd = ['rpcclient', '-U', f'{username}%{password}', ip, '-c', 'netshareenum']
-    else:
-        cmd = ['rpcclient', '-U', '%', ip, '-c', 'netshareenum']
-    
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        
-        output = result.stdout + result.stderr
-        
-        # Check for errors
-        if 'NT_STATUS_ACCESS_DENIED' in output or 'ACCESS_DENIED' in output:
-            return None, 'Access Denied'
-        elif 'NT_STATUS_LOGON_FAILURE' in output:
-            return None, 'Logon Failure'
-        
-        # Parse share list
-        for line in output.split('\n'):
-            line = line.strip()
-            
-            # Look for netname lines (format: netname: SHARE_NAME)
-            if line.startswith('netname:'):
-                match = re.search(r'netname:\s*(\S+)', line)
-                if match:
-                    share_name = match.group(1)
-                    shares.append({
-                        'name': share_name,
-                        'type': 'Unknown',
-                        'comment': ''
-                    })
-        
-        if shares:
-            return shares, None
-        else:
-            return None, 'No shares found'
-            
-    except subprocess.TimeoutExpired:
-        return None, 'Timeout'
-    except Exception as e:
-        return None, str(e)
-
 def check_smb_signing(ip: str, timeout: int = 5) -> Dict:
     """
-    Check SMB signing status using crackmapexec.
+    Check SMB signing status using NetExec.
     
     Args:
         ip: Target IP address
@@ -405,24 +417,25 @@ def check_smb_signing(ip: str, timeout: int = 5) -> Dict:
     }
     
     try:
-        # Use crackmapexec to check SMB signing
-        cmd = ['crackmapexec', 'smb', ip, '--gen-relay-list', 'temp_relay.txt']
+        # Use NetExec to check SMB signing
+        cmd = ['netexec', 'smb', ip, '--gen-relay-list', 'temp_relay.txt']
         
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            stdin=subprocess.DEVNULL
         )
         
         output = proc.stdout + proc.stderr
         
         # Parse output for signing status
-        if 'signing:False' in output.lower():
+        if 'signing:False' in output.lower() or 'signing: False' in output:
             result['signing_enabled'] = False
             result['signing_required'] = False
             result['relay_vulnerable'] = True
-        elif 'signing:True' in output.lower():
+        elif 'signing:True' in output.lower() or 'signing: True' in output:
             result['signing_enabled'] = True
             # Check if required or just enabled
             if 'signing required' not in output.lower():
@@ -439,7 +452,7 @@ def check_smb_signing(ip: str, timeout: int = 5) -> Dict:
     except subprocess.TimeoutExpired:
         result['error'] = 'Timeout'
     except FileNotFoundError:
-        result['error'] = 'crackmapexec not found - install with: apt install crackmapexec'
+        result['error'] = 'netexec not found - install with: sudo apt install netexec'
     except Exception as e:
         result['error'] = str(e)
     
@@ -463,6 +476,8 @@ def scan_host(ip: str, timeout: int = 2, test_access: bool = False,
     result = {
         'ip': ip,
         'hostname': None,
+        'domain': None,
+        'os': None,
         'smb_enabled': False,
         'ports_open': [],
         'shares': [],
@@ -471,6 +486,7 @@ def scan_host(ip: str, timeout: int = 2, test_access: bool = False,
         'null_session': False,
         'guest_access': False,
         'smb_signing': None,
+        'smbv1': False,
         'error': None
     }
     
@@ -493,33 +509,40 @@ def scan_host(ip: str, timeout: int = 2, test_access: bool = False,
     result['smb_enabled'] = True
     
     # Check SMB signing status
-    signing_result = check_smb_signing(ip, timeout=5)
-    result['smb_signing'] = signing_result
+    # Try to enumerate SMB with NetExec (null session first)
+    smb_info, error = enumerate_smb_netexec(ip, '', '', timeout=15)
     
-    # Try to enumerate shares (null session first)
-    shares, error = enumerate_shares_smbclient(ip, '', '', timeout=10)
-    
-    if shares:
+    if smb_info and smb_info['shares']:
         result['null_session'] = True
-        result['shares'] = shares
+        result['shares'] = smb_info['shares']
+        result['smb_signing'] = smb_info['smb_signing']
+        result['hostname'] = smb_info['hostname']
+        result['domain'] = smb_info['domain']
+        result['os'] = smb_info['os']
+        result['smbv1'] = smb_info['smbv1']
     else:
         # Try with guest account
-        shares, error = enumerate_shares_smbclient(ip, 'guest', '', timeout=10)
-        if shares:
+        smb_info, error = enumerate_smb_netexec(ip, 'guest', '', timeout=15)
+        if smb_info and smb_info['shares']:
             result['guest_access'] = True
-            result['shares'] = shares
+            result['shares'] = smb_info['shares']
+            result['smb_signing'] = smb_info['smb_signing']
+            result['hostname'] = smb_info['hostname'] 
+            result['domain'] = smb_info['domain']
+            result['os'] = smb_info['os']
+            result['smbv1'] = smb_info['smbv1']
         elif username:
             # Try with provided credentials
-            shares, error = enumerate_shares_smbclient(ip, username, password, timeout=10)
-            if shares:
-                result['shares'] = shares
+            smb_info, error = enumerate_smb_netexec(ip, username, password, timeout=15)
+            if smb_info and smb_info['shares']:
+                result['shares'] = smb_info['shares']
+                result['smb_signing'] = smb_info['smb_signing']
+                result['hostname'] = smb_info['hostname']
+                result['domain'] = smb_info['domain'] 
+                result['os'] = smb_info['os']
+                result['smbv1'] = smb_info['smbv1']
             else:
-                # Try rpcclient as fallback
-                shares, rpc_error = enumerate_shares_rpcclient(ip, username, password, timeout=10)
-                if shares:
-                    result['shares'] = shares
-                else:
-                    result['error'] = error or rpc_error
+                result['error'] = error
         else:
             result['error'] = error
     
@@ -824,7 +847,7 @@ def save_smb_attack_guide(results: List[Dict], filename: str = 'SMB_ATTACK_GUIDE
 
 def main():
     parser = argparse.ArgumentParser(
-        description='SMBSeek v1.0 - SMB Share Discovery and Enumeration',
+        description='SMBSeek v2.0 - SMB Discovery + Signing Detection (NetExec-Powered)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -871,9 +894,10 @@ Examples:
     
     print_banner()
     
-    # Check for smbclient
-    if not check_smbclient():
-        print(f"{Colors.FAIL}[!] Error: smbclient not found. Please install: sudo apt install smbclient{Colors.ENDC}")
+    # Check for netexec
+    if not check_netexec():
+        print(f"{Colors.FAIL}[!] Error: netexec not found. Please install: sudo apt install netexec{Colors.ENDC}")
+        print(f"{Colors.WARNING}[!] Note: netexec replaces crackmapexec for modern SMB enumeration{Colors.ENDC}")
         return 1
     
     # Validate workers
