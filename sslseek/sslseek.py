@@ -55,7 +55,7 @@ def print_banner():
     {RESET}"""
     print(banner)
 
-def check_testssl():
+def check_testssl(auto_install=False):
     """Check if testssl.sh is available, auto-install if missing"""
     print(f"{CYAN}[*] Checking for testssl.sh...{RESET}")
     
@@ -94,22 +94,27 @@ def check_testssl():
     except:
         pass
     
-    # testssl.sh not found - offer to install
+    # testssl.sh not found - handle installation
     print(f"{YELLOW}[!] testssl.sh not found!{RESET}")
-    print(f"{CYAN}[*] Would you like to auto-install testssl.sh? (y/n){RESET}")
     
-    try:
-        response = input().strip().lower()
-        if response in ['y', 'yes']:
-            return install_testssl()
-        else:
-            print(f"{YELLOW}[*] Manual installation instructions:{RESET}")
-            print(f"{YELLOW}    git clone --depth 1 https://github.com/drwetter/testssl.sh.git{RESET}")
-            print(f"{YELLOW}    Or download from: https://testssl.sh/{RESET}")
+    if auto_install:
+        print(f"{CYAN}[*] Auto-installing testssl.sh...{RESET}")
+        return install_testssl()
+    else:
+        print(f"{CYAN}[*] Would you like to auto-install testssl.sh? (y/n){RESET}")
+        
+        try:
+            response = input().strip().lower()
+            if response in ['y', 'yes']:
+                return install_testssl()
+            else:
+                print(f"{YELLOW}[*] Manual installation instructions:{RESET}")
+                print(f"{YELLOW}    git clone --depth 1 https://github.com/drwetter/testssl.sh.git{RESET}")
+                print(f"{YELLOW}    Or download from: https://testssl.sh/{RESET}")
+                return None
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n{YELLOW}[!] Installation cancelled{RESET}")
             return None
-    except (KeyboardInterrupt, EOFError):
-        print(f"\n{YELLOW}[!] Installation cancelled{RESET}")
-        return None
 
 def install_testssl():
     """Auto-install testssl.sh from GitHub"""
@@ -1293,6 +1298,7 @@ Examples:
     parser.add_argument('-f', '--file', help='File containing targets (one per line)')
     parser.add_argument('--full', action='store_true', help='Full comprehensive scan (slower)')
     parser.add_argument('--guide-only', action='store_true', help='Generate guide only, skip scanning')
+    parser.add_argument('--auto-install', action='store_true', help='Automatically install testssl.sh if not found')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
     
     args = parser.parse_args()
@@ -1312,7 +1318,7 @@ Examples:
         sys.exit(1)
     
     # Check for testssl.sh
-    testssl_path = check_testssl()
+    testssl_path = check_testssl(auto_install=args.auto_install)
     if not testssl_path:
         print(f"\n{YELLOW}[*] Generating SSL/TLS attack guide anyway...{RESET}")
         save_ssl_guide()
