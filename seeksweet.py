@@ -45,21 +45,30 @@ def copy_outputs_to_logs(tool, tool_dir):
     """Copy tool outputs to centralized seekerlogs folder"""
     try:
         logs_dir = ensure_logs_dir()
-        copied_files = []
+        copied_items = []
         
         for output in tool['outputs']:
             source = tool_dir / output
             if source.exists():
                 dest = logs_dir / output
-                # Copy file
+                
+                # Handle both files and directories
                 import shutil
-                shutil.copy2(source, dest)
-                copied_files.append(output)
+                if source.is_dir():
+                    # Copy directory recursively
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(source, dest)
+                    copied_items.append(f"{output}/ (directory)")
+                else:
+                    # Copy file
+                    shutil.copy2(source, dest)
+                    copied_items.append(output)
         
-        if copied_files:
-            print(f"{GREEN}[+] Copied {len(copied_files)} file(s) to seekerlogs/{RESET}")
-            for f in copied_files:
-                print(f"    {GREEN}→{RESET} seekerlogs/{f}")
+        if copied_items:
+            print(f"{GREEN}[+] Copied {len(copied_items)} item(s) to seekerlogs/{RESET}")
+            for item in copied_items:
+                print(f"    {GREEN}→{RESET} seekerlogs/{item}")
         
         return True
     except Exception as e:
