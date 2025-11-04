@@ -167,7 +167,6 @@ def generate_testssl_command(target, testssl_path, full_scan=False, output_file=
         cmd.extend([
             '--warnings', 'off',
             '--openssl-timeout', '5',
-            '--fast',
         ])
     
     # JSON output for parsing
