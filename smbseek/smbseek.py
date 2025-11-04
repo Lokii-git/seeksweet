@@ -337,9 +337,13 @@ def parse_netexec_bulk_output(output: str) -> Dict[str, Dict]:
             if smb_info['os'] != 'Unknown':
                 results[ip]['os'] = smb_info['os']
             
-            # Update SMB signing info
-            results[ip]['smb_signing'].update(smb_info['smb_signing'])
-            results[ip]['smbv1'] = smb_info['smbv1']
+            # Update SMB signing info only if this line contains signing data
+            if '(signing:' in line:
+                results[ip]['smb_signing'].update(smb_info['smb_signing'])
+            
+            # Update SMBv1 info only if this line contains SMBv1 data
+            if '(SMBv1:' in line:
+                results[ip]['smbv1'] = smb_info['smbv1']
             
             # Add shares (avoid duplicates)
             for share in smb_info['shares']:
@@ -412,10 +416,12 @@ def parse_netexec_output(output: str, ip: str) -> Dict:
                 if signing_match:
                     signing_status = signing_match.group(1).lower()
                     if signing_status == 'true':
+                        # signing:True means SMB signing is ENABLED/REQUIRED = GOOD (protected)
                         smb_info['smb_signing']['signing_enabled'] = True
                         smb_info['smb_signing']['signing_required'] = True
                         smb_info['smb_signing']['relay_vulnerable'] = False
                     elif signing_status == 'false':
+                        # signing:False means SMB signing is DISABLED = BAD (vulnerable)
                         smb_info['smb_signing']['signing_enabled'] = False
                         smb_info['smb_signing']['signing_required'] = False
                         smb_info['smb_signing']['relay_vulnerable'] = True
