@@ -180,6 +180,64 @@ def check_netexec() -> bool:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
+def enumerate_smb_netexec_bulk(ip_list: List[str], username: str = '', password: str = '', 
+                               timeout: int = 60) -> Tuple[str, Optional[str]]:
+    """
+    Enumerate SMB using NetExec bulk scanning for efficiency.
+    
+    Args:
+        ip_list: List of IP addresses to scan
+        username: Username for authentication (empty for null session)
+        password: Password for authentication (empty for null session)
+        timeout: Command timeout in seconds
+        
+    Returns:
+        Tuple of (raw netexec output, error message)
+    """
+    
+    # Create a temporary file with IP addresses
+    import tempfile
+    import os
+    
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as temp_file:
+            for ip in ip_list:
+                temp_file.write(f"{ip}\n")
+            temp_filename = temp_file.name
+        
+        # Build netexec command for bulk scanning
+        cmd = ['netexec', 'smb', temp_filename, '--shares', '--continue-on-success']
+        
+        if username:
+            cmd.extend(['-u', username, '-p', password])
+        else:
+            # Test null session / anonymous access
+            cmd.extend(['-u', '', '-p', ''])
+        
+        print(f"{Colors.OKBLUE}[*] Running NetExec bulk scan: {' '.join(cmd)}{Colors.ENDC}")
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL
+        )
+        
+        # Clean up temp file
+        os.unlink(temp_filename)
+        
+        if result.stdout:
+            return result.stdout, None
+        else:
+            error_msg = result.stderr.strip() if result.stderr else f"NetExec failed with return code {result.returncode}"
+            return "", error_msg
+            
+    except subprocess.TimeoutExpired:
+        return "", f"NetExec timeout after {timeout} seconds"
+    except Exception as e:
+        return "", f"NetExec error: {str(e)}"
+
 def enumerate_smb_netexec(ip: str, username: str = '', password: str = '', 
                           timeout: int = 15) -> Tuple[Optional[Dict], Optional[str]]:
     """
@@ -224,6 +282,75 @@ def enumerate_smb_netexec(ip: str, username: str = '', password: str = '',
         return None, f"NetExec timeout after {timeout} seconds"
     except Exception as e:
         return None, f"NetExec error: {str(e)}"
+
+def parse_netexec_bulk_output(output: str) -> Dict[str, Dict]:
+    """
+    Parse NetExec bulk output to extract SMB information for multiple hosts.
+    
+    Args:
+        output: NetExec bulk stdout
+        
+    Returns:
+        Dictionary mapping IP addresses to SMB information
+    """
+    results = {}
+    lines = output.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line or not 'SMB' in line:
+            continue
+            
+        # Extract IP from NetExec output
+        # Example: SMB         192.168.1.100   445    DC01             [*] Windows 10.0 Build 17763 x64 (name:DC01) (domain:CONTOSO.LOCAL) (signing:True) (SMBv1:False)
+        parts = line.split()
+        if len(parts) >= 3 and parts[0] == 'SMB':
+            ip = parts[1]
+            
+            # Initialize result for this IP if not exists
+            if ip not in results:
+                results[ip] = {
+                    'ip': ip,
+                    'hostname': 'Unknown',
+                    'domain': 'Unknown', 
+                    'os': 'Unknown',
+                    'smb_signing': {
+                        'signing_enabled': False,
+                        'signing_required': False,
+                        'relay_vulnerable': True,
+                        'error': None
+                    },
+                    'smbv1': False,
+                    'shares': [],
+                    'authentication': 'Failed',
+                    'errors': []
+                }
+            
+            # Parse this line and update the result
+            smb_info = parse_netexec_output(line, ip)
+            
+            # Merge the parsed information
+            if smb_info['hostname'] != 'Unknown':
+                results[ip]['hostname'] = smb_info['hostname']
+            if smb_info['domain'] != 'Unknown':
+                results[ip]['domain'] = smb_info['domain']
+            if smb_info['os'] != 'Unknown':
+                results[ip]['os'] = smb_info['os']
+            
+            # Update SMB signing info
+            results[ip]['smb_signing'].update(smb_info['smb_signing'])
+            results[ip]['smbv1'] = smb_info['smbv1']
+            
+            # Add shares (avoid duplicates)
+            for share in smb_info['shares']:
+                if not any(s['name'] == share['name'] for s in results[ip]['shares']):
+                    results[ip]['shares'].append(share)
+                    
+            # Update authentication status
+            if smb_info['authentication'] != 'Failed':
+                results[ip]['authentication'] = smb_info['authentication']
+    
+    return results
 
 def parse_netexec_output(output: str, ip: str) -> Dict:
     """
@@ -890,6 +1017,10 @@ Examples:
                        action='store_true',
                        help='Verbose output (show all hosts)')
     
+    parser.add_argument('--show-netexec',
+                       action='store_true',
+                       help='Show raw NetExec output for debugging')
+    
     args = parser.parse_args()
     
     print_banner()
@@ -911,92 +1042,140 @@ Examples:
         print(f"{Colors.FAIL}[!] No valid IPs to scan{Colors.ENDC}")
         return 1
     
-    print(f"\n{Colors.OKBLUE}[*] Starting SMB scan...{Colors.ENDC}")
+    print(f"\n{Colors.OKBLUE}[*] Starting SMB bulk scan with NetExec...{Colors.ENDC}")
     print(f"{Colors.OKBLUE}[*] Targets: {len(ips)}{Colors.ENDC}")
-    print(f"{Colors.OKBLUE}[*] Workers: {args.workers}{Colors.ENDC}")
-    print(f"{Colors.OKBLUE}[*] Test Access: {'Yes' if args.test_access else 'No'}{Colors.ENDC}")
     if args.username:
         print(f"{Colors.OKBLUE}[*] Authentication: {args.username}:{'*' * len(args.password)}{Colors.ENDC}")
     print()
     
-    # Scan hosts
+    # Use NetExec bulk scanning for efficiency
+    netexec_output, error = enumerate_smb_netexec_bulk(ips, args.username, args.password, timeout=120)
+    
+    if error:
+        print(f"{Colors.FAIL}[!] NetExec bulk scan failed: {error}{Colors.ENDC}")
+        return 1
+    
+    # Show raw NetExec output if requested
+    if args.show_netexec:
+        print(f"\n{Colors.OKGREEN}[+] Raw NetExec Output:{Colors.ENDC}")
+        print("=" * 80)
+        print(netexec_output)
+        print("=" * 80)
+    
+    # Parse bulk results
+    bulk_results = parse_netexec_bulk_output(netexec_output)
+    
+    # Convert to our result format and add port scanning
     results = []
-    completed = 0
     smb_found = 0
     
-    try:
-        with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            future_to_ip = {
-                executor.submit(scan_host, ip, args.timeout, args.test_access, 
-                              args.username, args.password): ip 
-                for ip in ips
-            }
+    for ip in ips:
+        result = {
+            'ip': ip,
+            'hostname': None,
+            'domain': None,
+            'os': None,
+            'smb_enabled': False,
+            'ports_open': [],
+            'shares': [],
+            'accessible_shares': [],
+            'interesting_shares': [],
+            'null_session': False,
+            'guest_access': False,
+            'smb_signing': None,
+            'smbv1': False,
+            'error': None
+        }
+        
+        # Check SMB ports quickly
+        open_ports = []
+        for port, service in SMB_PORTS.items():
+            if check_port(ip, port, args.timeout):
+                open_ports.append(port)
+                result['ports_open'].append({'port': port, 'service': service})
+        
+        if open_ports:
+            result['smb_enabled'] = True
             
-            for future in as_completed(future_to_ip):
-                ip = future_to_ip[future]
-                completed += 1
+            # Use NetExec results if available
+            if ip in bulk_results:
+                netexec_data = bulk_results[ip]
+                result.update({
+                    'hostname': netexec_data['hostname'],
+                    'domain': netexec_data['domain'],
+                    'os': netexec_data['os'],
+                    'shares': netexec_data['shares'],
+                    'smb_signing': netexec_data['smb_signing'],
+                    'smbv1': netexec_data['smbv1']
+                })
                 
-                try:
-                    result = future.result()
-                    results.append(result)
-                    
-                    if result['smb_enabled']:
-                        smb_found += 1
-                        
-                        # Determine confidence
-                        if result['accessible_shares']:
-                            confidence = f"{Colors.OKGREEN}[HIGH]{Colors.ENDC}"
-                        elif result['shares']:
-                            confidence = f"{Colors.WARNING}[MEDIUM]{Colors.ENDC}"
-                        else:
-                            confidence = f"{Colors.OKBLUE}[LOW]{Colors.ENDC}"
-                        
-                        hostname_str = f" ({result['hostname']})" if result['hostname'] else ""
-                        shares_str = f", {len(result['shares'])} shares" if result['shares'] else ""
-                        access_str = f", {len(result['accessible_shares'])} accessible" if result['accessible_shares'] else ""
-                        
-                        null_str = f"{Colors.WARNING} [NULL SESSION]{Colors.ENDC}" if result['null_session'] else ""
-                        guest_str = f"{Colors.WARNING} [GUEST ACCESS]{Colors.ENDC}" if result['guest_access'] else ""
-                        
-                        # SMB signing status
-                        signing_str = ""
-                        if result['smb_signing']:
-                            if result['smb_signing']['relay_vulnerable']:
-                                signing_str = f"{Colors.FAIL} [RELAY VULNERABLE]{Colors.ENDC}"
-                            elif result['smb_signing']['signing_required']:
-                                signing_str = f"{Colors.OKGREEN} [SIGNING REQUIRED]{Colors.ENDC}"
-                        
-                        print(f"{confidence} {result['ip']}{hostname_str}{shares_str}{access_str}{null_str}{guest_str}{signing_str}")
-                        
-                        # Show interesting shares
-                        if result['interesting_shares']:
-                            print(f"    {Colors.WARNING}★ Interesting: {', '.join(result['interesting_shares'])}{Colors.ENDC}")
-                        
-                        # Show accessible shares
-                        if result['accessible_shares']:
-                            for share in result['accessible_shares']:
-                                print(f"    {Colors.OKGREEN}✓ \\\\{result['ip']}\\{share['name']} "
-                                     f"(Files: {share['files_found']}){Colors.ENDC}")
-                    
-                    elif args.verbose:
-                        print(f"[ ] {ip} - No SMB")
-                    
-                    # Progress
-                    if completed % 10 == 0 or completed == len(ips):
-                        print(f"\n{Colors.OKCYAN}[*] Progress: {completed}/{len(ips)} "
-                             f"({smb_found} with SMB){Colors.ENDC}\n")
+                # Determine session type
+                if netexec_data['authentication'] == 'Anonymous':
+                    result['null_session'] = True
+                elif netexec_data['authentication'] == 'Guest':
+                    result['guest_access'] = True
                 
-                except Exception as e:
-                    print(f"{Colors.FAIL}[!] Error scanning {ip}: {e}{Colors.ENDC}")
+                # Check for interesting shares
+                for share in result['shares']:
+                    if any(interesting.lower() in share['name'].lower() 
+                           for interesting in INTERESTING_SHARES):
+                        result['interesting_shares'].append(share['name'])
+        
+        if result['smb_enabled']:
+            smb_found += 1
+        
+        results.append(result)
     
-    except KeyboardInterrupt:
-        print(f"\n\n{Colors.WARNING}[!] Scan interrupted by user{Colors.ENDC}")
+    # Rest of the processing...
+    print(f"\n{Colors.OKGREEN}[+] Scan Complete!{Colors.ENDC}")
+    print(f"{Colors.OKBLUE}[*] Total hosts scanned: {len(results)}{Colors.ENDC}")
+    print(f"{Colors.OKBLUE}[*] Hosts with SMB: {smb_found}{Colors.ENDC}")
+    
+    # Show results
+    for result in results:
+        if result['smb_enabled']:
+            # Determine confidence
+            if result['accessible_shares']:
+                confidence = f"{Colors.OKGREEN}[HIGH]{Colors.ENDC}"
+            elif result['shares']:
+                confidence = f"{Colors.WARNING}[MEDIUM]{Colors.ENDC}"
+            else:
+                confidence = f"{Colors.OKBLUE}[LOW]{Colors.ENDC}"
+            
+            hostname_str = f" ({result['hostname']})" if result['hostname'] else ""
+            shares_str = f" - {len(result['shares'])} shares" if result['shares'] else ""
+            access_str = f" ({len(result['accessible_shares'])} accessible)" if result['accessible_shares'] else ""
+            null_str = f"{Colors.WARNING} [NULL SESSION]{Colors.ENDC}" if result['null_session'] else ""
+            guest_str = f"{Colors.WARNING} [GUEST ACCESS]{Colors.ENDC}" if result['guest_access'] else ""
+            
+            # SMB signing status
+            signing_str = ""
+            if result['smb_signing']:
+                if result['smb_signing']['relay_vulnerable']:
+                    signing_str = f"{Colors.FAIL} [RELAY VULNERABLE]{Colors.ENDC}"
+                elif result['smb_signing']['signing_required']:
+                    signing_str = f"{Colors.OKGREEN} [SIGNING REQUIRED]{Colors.ENDC}"
+            
+            print(f"{confidence} {result['ip']}{hostname_str}{shares_str}{access_str}{null_str}{guest_str}{signing_str}")
+            
+            # Show interesting shares
+            if result['interesting_shares']:
+                print(f"    {Colors.WARNING}★ Interesting: {', '.join(result['interesting_shares'])}{Colors.ENDC}")
+            
+            # Show accessible shares
+            if result['accessible_shares']:
+                for share in result['accessible_shares']:
+                    print(f"    {Colors.OKGREEN}✓ \\\\{result['ip']}\\{share['name']} "
+                         f"(Files: {share['files_found']}){Colors.ENDC}")
+        
+        elif args.verbose:
+            print(f"[ ] {result['ip']} - No SMB")
     
     # Summary
     print(f"\n{Colors.HEADER}{'=' * 70}{Colors.ENDC}")
     print(f"{Colors.HEADER}Scan Complete{Colors.ENDC}")
     print(f"{Colors.HEADER}{'=' * 70}{Colors.ENDC}")
-    print(f"Total Hosts Scanned: {completed}")
+    print(f"Total Hosts Scanned: {len(results)}")
     print(f"Hosts with SMB: {smb_found}")
     
     hosts_with_shares = sum(1 for r in results if r['shares'])

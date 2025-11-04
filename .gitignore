@@ -60,6 +60,7 @@ tmp/
 *-v1-legacy.py
 *-legacy.md
 webseek/test_smart_reports.py
+smbseek/smbseek_v1.py
 logs/
 
 # Documentation (organized in docs/ folder - local only)
