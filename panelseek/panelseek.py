@@ -640,15 +640,16 @@ def run_gowitness_screenshots(panellist_file, delay=15):
         return False
     
     try:
-        # Run gowitness with file input and delay. Use absolute path for destination to avoid cwd issues.
+        # Run gowitness with correct v3+ syntax. Use absolute path for destination to avoid cwd issues.
         dest_abs = os.path.abspath(screenshots_dir)
         cmd = [
-            gowitness_binary, 'file',
-            '--source', panellist_file,
-            '--destination', dest_abs,
+            gowitness_binary, 'scan', 'file',
+            '--file', panellist_file,
+            '--screenshot-path', dest_abs,
             '--delay', str(delay),
             '--timeout', '30',
-            '--threads', '5'
+            '--threads', '5',
+            '--write-db'  # Save results to database for later use
         ]
         
         print(f"[*] Running: {' '.join(cmd)}")
