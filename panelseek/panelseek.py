@@ -652,8 +652,11 @@ def run_gowitness_screenshots(panellist_file, delay=15):
             '--write-db'  # Save results to database for later use
         ]
         
-        print(f"[*] Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=False, text=True, timeout=600)
+        print(f"[*] Starting gowitness screenshot capture (this may take a while)...")
+        print(f"[*] Processing {len(urls)} URLs with {delay}s delay between requests...")
+        
+        # Capture stderr to suppress Chrome DevTools JSON unmarshaling errors
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         
         if result.returncode == 0:
             print(f"[+] Screenshots captured successfully in '{screenshots_dir}' directory")
@@ -673,6 +676,25 @@ def run_gowitness_screenshots(panellist_file, delay=15):
             return True
         else:
             print(f"[!] gowitness failed with exit code {result.returncode}")
+            
+            # Only show stderr if it contains actual errors (not Chrome DevTools JSON warnings)
+            if result.stderr:
+                # Filter out Chrome DevTools JSON unmarshaling errors
+                error_lines = result.stderr.split('\n')
+                real_errors = []
+                for line in error_lines:
+                    if line.strip() and not (
+                        'could not unmarshal event' in line and 
+                        'IPAddressSpace' in line and 
+                        'unknown IPAddressSpace value' in line
+                    ):
+                        real_errors.append(line)
+                
+                if real_errors:
+                    print("[!] gowitness errors:")
+                    for error in real_errors[:5]:  # Show max 5 real errors
+                        print(f"    {error}")
+            
             return False
             
     except subprocess.TimeoutExpired:
