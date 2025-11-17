@@ -520,17 +520,57 @@ def check_go_installed():
         return False
 
 
+def find_gowitness_binary():
+    """Find gowitness binary in common Go installation paths"""
+    import shutil
+    
+    # First try system PATH
+    gowitness_path = shutil.which('gowitness')
+    if gowitness_path:
+        return gowitness_path
+    
+    # Check common Go binary locations
+    possible_paths = [
+        os.path.expanduser('~/go/bin/gowitness'),
+        os.path.expanduser('$GOPATH/bin/gowitness'),
+        '/usr/local/go/bin/gowitness',
+        '/opt/go/bin/gowitness'
+    ]
+    
+    # Add Windows paths
+    if os.name == 'nt':
+        possible_paths.extend([
+            os.path.expanduser('~\\go\\bin\\gowitness.exe'),
+            'C:\\Go\\bin\\gowitness.exe',
+            os.path.expandvars('%USERPROFILE%\\go\\bin\\gowitness.exe'),
+            os.path.expandvars('%GOPATH%\\bin\\gowitness.exe')
+        ])
+    
+    for path in possible_paths:
+        # Expand environment variables
+        expanded_path = os.path.expandvars(path)
+        if os.path.isfile(expanded_path) and os.access(expanded_path, os.X_OK):
+            return expanded_path
+    
+    return None
+
+
 def check_gowitness_installed():
     """Check if gowitness is installed"""
+    gowitness_binary = find_gowitness_binary()
+    
+    if not gowitness_binary:
+        return False
+    
     try:
-        result = subprocess.run(['gowitness', '--version'], 
+        result = subprocess.run([gowitness_binary, '--version'], 
                               capture_output=True, 
                               text=True,
                               timeout=10)
         if result.returncode == 0:
             version = result.stdout.strip()
-            print(f"[+] gowitness found: {version}")
-            return True
+            print(f"[+] gowitness found at {gowitness_binary}: {version}")
+            return gowitness_binary
         else:
             return False
     except FileNotFoundError:
@@ -579,19 +619,33 @@ def run_gowitness_screenshots(panellist_file, delay=15):
         print("[!] No URLs found in panel list file")
         return False
     
+    # Find gowitness binary
+    gowitness_binary = find_gowitness_binary()
+    if not gowitness_binary:
+        print("[!] gowitness binary not found in PATH or common locations")
+        print("[!] Try adding $HOME/go/bin to your PATH or check gowitness installation")
+        return False
+    
     print(f"\n[*] Capturing screenshots of {len(urls)} admin panels with gowitness...")
     print(f"[*] Using delay of {delay} seconds for slower systems...")
+    print(f"[*] Using gowitness binary: {gowitness_binary}")
     
-    # Create screenshots directory
-    screenshots_dir = "screenshots"
-    os.makedirs(screenshots_dir, exist_ok=True)
+    # Create gowitness directory structure (docs and other tools expect ./gowitness/screenshots)
+    gowitness_base = "gowitness"
+    screenshots_dir = os.path.join(gowitness_base, "screenshots")
+    try:
+        os.makedirs(screenshots_dir, exist_ok=True)
+    except Exception as e:
+        print(f"[!] Error creating screenshots directory '{screenshots_dir}': {e}")
+        return False
     
     try:
-        # Run gowitness with file input and delay
+        # Run gowitness with file input and delay. Use absolute path for destination to avoid cwd issues.
+        dest_abs = os.path.abspath(screenshots_dir)
         cmd = [
-            'gowitness', 'file',
+            gowitness_binary, 'file',
             '--source', panellist_file,
-            '--destination', screenshots_dir,
+            '--destination', dest_abs,
             '--delay', str(delay),
             '--timeout', '30',
             '--threads', '5'
@@ -830,7 +884,8 @@ Examples:
                 print("[!] Skipping screenshot capture...")
             else:
                 # Check if gowitness is installed
-                if not check_gowitness_installed():
+                gowitness_path = check_gowitness_installed()
+                if not gowitness_path:
                     print("[*] gowitness not found. Attempting to install...")
                     if install_gowitness():
                         # Try to run gowitness after installation
@@ -838,6 +893,7 @@ Examples:
                     else:
                         print("[!] Failed to install gowitness. Skipping screenshot capture...")
                         print("[!] You can manually install with: go install github.com/sensepost/gowitness@latest")
+                        print("[!] Make sure $HOME/go/bin (Linux/Mac) or %USERPROFILE%\\go\\bin (Windows) is in your PATH")
                 else:
                     # gowitness is available, run screenshot capture
                     run_gowitness_screenshots(args.panellist, args.delay)
