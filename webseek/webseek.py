@@ -797,13 +797,18 @@ def generate_summary(findings):
         f.write("DETAILED FINDINGS\n")
         f.write("="*60 + "\n\n")
         
-        # Sort findings by severity (critical first)
+        # Sort findings by severity (critical first) - filter out non-dict objects
         severity_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4}
-        sorted_findings = sorted(findings, 
+        valid_findings = [f for f in findings if isinstance(f, dict)]
+        sorted_findings = sorted(valid_findings, 
                                 key=lambda x: severity_order.get(
                                     x.get('info', {}).get('severity', 'info').lower(), 5))
         
         for finding in sorted_findings:
+            # Additional safety check (should not be needed after filtering above)
+            if not isinstance(finding, dict):
+                continue
+                
             info = finding.get('info', {})
             severity = info.get('severity', 'unknown').upper()
             name = info.get('name', 'Unknown')
