@@ -46,6 +46,7 @@ import ipaddress
 from pathlib import Path
 from datetime import datetime
 import shutil
+import time
 
 # Import shared utilities
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -320,6 +321,11 @@ def group_findings_by_vuln(findings):
     vuln_groups = {}
     
     for finding in findings:
+        # Skip invalid findings that aren't dictionaries
+        if not isinstance(finding, dict):
+            print(f"{YELLOW}[!] Warning: Skipping invalid finding (not a dict): {type(finding)}{RESET}")
+            continue
+            
         template_id = finding.get('template-id', 'unknown')
         host = finding.get('host', '')
         ip = extract_ip(host)
@@ -663,6 +669,46 @@ def parse_json_results(json_file):
         return None
 
 
+def check_existing_results():
+    """Check if results files already exist and are recent"""
+    results_files = ['findings.json', 'all-hosts.txt', 'live-hosts.txt']
+    existing_files = []
+    
+    for filename in results_files:
+        if os.path.exists(filename):
+            # Get file age
+            file_age = time.time() - os.path.getmtime(filename)
+            file_size = os.path.getsize(filename)
+            existing_files.append({
+                'name': filename,
+                'age_hours': file_age / 3600,
+                'size': file_size
+            })
+    
+    if existing_files:
+        print(f"\n{YELLOW}[!] Found existing result files:{RESET}")
+        for file_info in existing_files:
+            age_str = f"{file_info['age_hours']:.1f} hours ago"
+            size_str = f"{file_info['size']} bytes"
+            print(f"    • {file_info['name']} - {size_str} ({age_str})")
+        
+        print(f"\n{CYAN}[?] Use existing results? (y/N): {RESET}", end='')
+        response = input().strip().lower()
+        
+        if response in ['y', 'yes']:
+            print(f"{GREEN}[+] Using existing results, skipping scan...{RESET}")
+            return True
+        else:
+            print(f"{BLUE}[*] Starting fresh scan...{RESET}")
+            # Clean up old results
+            for file_info in existing_files:
+                if os.path.exists(file_info['name']):
+                    os.remove(file_info['name'])
+                    print(f"{YELLOW}[*] Removed old {file_info['name']}{RESET}")
+    
+    return False
+
+
 def generate_summary(findings):
     """Generate human-readable summary of findings"""
     if not findings:
@@ -848,6 +894,10 @@ Examples:
                        help='Update Nuclei templates before scanning')
     parser.add_argument('--skip-update', action='store_true',
                        help='Skip automatic template update check')
+    parser.add_argument('--force-scan', '-f', action='store_true',
+                       help='Force fresh scan even if results exist')
+    parser.add_argument('--parse-only', '-p', action='store_true',
+                       help='Only parse existing results, skip scanning')
     
     args = parser.parse_args()
     
@@ -863,6 +913,24 @@ Examples:
             print(f"{YELLOW}[!] Template update failed, continuing anyway...{RESET}")
     elif not args.skip_update:
         print(f"{BLUE}[*] Tip: Use --update to update Nuclei templates{RESET}")
+    
+    # Handle parse-only mode
+    if args.parse_only:
+        print(f"{BLUE}[*] Parse-only mode: Using existing results...{RESET}")
+        findings = parse_json_results('findings.json')
+        if findings is not None:
+            generate_summary(findings)
+        else:
+            print(f"{RED}[!] No existing results found. Run without --parse-only to scan first.{RESET}")
+        return
+    
+    # Check for existing results first (unless force scan is requested)
+    if not args.force_scan and check_existing_results():
+        # Use existing results
+        findings = parse_json_results('findings.json')
+        if findings is not None:
+            generate_summary(findings)
+        return
     
     # Prepare target file
     try:
