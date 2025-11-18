@@ -908,7 +908,17 @@ Examples:
     
     print_banner()
     
-    # Check if Nuclei is installed
+    # Handle parse-only mode first (doesn't need nuclei)
+    if args.parse_only:
+        print(f"{BLUE}[*] Parse-only mode: Using existing results...{RESET}")
+        findings = parse_json_results('findings.json')
+        if findings is not None:
+            generate_summary(findings)
+        else:
+            print(f"{RED}[!] No existing results found. Run without --parse-only to scan first.{RESET}")
+        return
+    
+    # Check if Nuclei is installed (only needed for scanning)
     if not check_nuclei():
         sys.exit(1)
     
@@ -918,16 +928,6 @@ Examples:
             print(f"{YELLOW}[!] Template update failed, continuing anyway...{RESET}")
     elif not args.skip_update:
         print(f"{BLUE}[*] Tip: Use --update to update Nuclei templates{RESET}")
-    
-    # Handle parse-only mode
-    if args.parse_only:
-        print(f"{BLUE}[*] Parse-only mode: Using existing results...{RESET}")
-        findings = parse_json_results('findings.json')
-        if findings is not None:
-            generate_summary(findings)
-        else:
-            print(f"{RED}[!] No existing results found. Run without --parse-only to scan first.{RESET}")
-        return
     
     # Check for existing results first (unless force scan is requested)
     if not args.force_scan and check_existing_results():
