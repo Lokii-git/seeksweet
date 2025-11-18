@@ -640,16 +640,84 @@ def generate_notable_findings_report(vuln_groups, output_file='NOTABLE_FINDINGS.
     print(f"{GREEN}    (Filtered from {len(vuln_groups)} to {total_notable} actionable findings){RESET}")
 
 
+def detect_json_format(json_file):
+    """Detect if JSON file is array format or JSONL format"""
+    try:
+        with open(json_file, 'r', encoding='utf-8') as f:
+            start = f.read(1000).strip()
+        
+        if start.startswith('['):
+            return "array"
+        elif start.startswith('{'):
+            return "jsonl"
+        else:
+            return "unknown"
+    except Exception:
+        return "error"
+
+
+def convert_json_array_to_jsonl(json_file):
+    """Convert JSON array format to JSONL format in-place"""
+    backup_file = json_file.replace('.json', '_array_backup.json')
+    temp_file = json_file.replace('.json', '_temp_jsonl.json')
+    
+    try:
+        print(f"{BLUE}[*] Converting JSON array to JSONL format...{RESET}")
+        
+        # Load JSON array
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if not isinstance(data, list):
+            print(f"{RED}[!] Error: Expected JSON array, got {type(data)}{RESET}")
+            return False
+        
+        print(f"{GREEN}[+] Loaded {len(data)} findings from JSON array{RESET}")
+        
+        # Write as JSONL to temp file
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            for finding in data:
+                f.write(json.dumps(finding) + '\n')
+        
+        # Backup original and replace with converted
+        os.rename(json_file, backup_file)
+        os.rename(temp_file, json_file)
+        
+        print(f"{GREEN}[+] Converted to JSONL format (backup saved as {backup_file}){RESET}")
+        return True
+        
+    except Exception as e:
+        print(f"{RED}[!] Error during conversion: {e}{RESET}")
+        # Clean up temp file if it exists
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+        return False
+
+
 def parse_json_results(json_file):
-    """Parse Nuclei JSON results from file"""
+    """Parse Nuclei JSON results from file (handles both array and JSONL formats)"""
     if not os.path.exists(json_file):
         print(f"{YELLOW}[!] Warning: Results file not found: {json_file}{RESET}")
         return None
     
+    # Detect and handle format
+    format_type = detect_json_format(json_file)
+    
+    if format_type == "array":
+        print(f"{YELLOW}[!] Detected JSON array format - converting to JSONL...{RESET}")
+        if not convert_json_array_to_jsonl(json_file):
+            return None
+    elif format_type == "unknown":
+        print(f"{YELLOW}[!] Warning: Unknown JSON format in {json_file}{RESET}")
+    elif format_type == "error":
+        print(f"{RED}[!] Error reading {json_file}{RESET}")
+        return None
+    
+    # Parse as JSONL format
     try:
         findings = []
         with open(json_file, 'r', encoding='utf-8') as f:
-            # Nuclei outputs one JSON object per line
+            # Parse one JSON object per line
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
