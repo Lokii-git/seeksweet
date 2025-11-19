@@ -312,6 +312,18 @@ SEEK_TOOLS = [
         'outputs': ['nessuslist.txt', 'nessus_findings.txt', 'nessus_results.csv', 'NESSUS_GUIDE.txt'],
         'typical_args': '-t iplist.txt -n "My Scan" (requires Nessus API keys)',
         'new_features': 'Full Nessus API integration with automated results parsing'
+    },
+    {
+        'id': 18,
+        'name': 'ThoughtLeadershipSeek',
+        'script': 'thought-leadership/thoughtleadershipseek.py',
+        'priority': 'MEDIUM',
+        'phase': 'Discovery',
+        'description': 'Discover thought leadership content, blogs, whitepapers, and social media presence',
+        'why': 'OSINT reconnaissance - identify public resources, personnel, and organizational intelligence',
+        'outputs': ['thoughtleadershiplist.txt', 'thought_leadership_details.txt', 'thought_leadership_details.json', 'THOUGHT_LEADERSHIP_GUIDE.txt'],
+        'typical_args': '-d example.com -v (or -f iplist.txt)',
+        'new_features': 'Comprehensive OSINT tool for thought leadership and public content discovery'
     }
 ]
 
