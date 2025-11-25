@@ -33,6 +33,9 @@ found_creds.txt
 sharelist.txt
 share_details.txt
 
+# Development templates
+SEEKSWEET_MODULE_TEMPLATE.py
+
 # Nessus output files
 nessus_results.csv
 nessus_results.json
@@ -62,6 +65,10 @@ tmp/
 webseek/test_smart_reports.py
 smbseek/smbseek_v1.py
 logs/
+
+# Installation and dependency files
+installation_results.json
+*.log
 
 # Documentation (organized in docs/ folder - local only)
 # Keep only README.md in root, all other docs in docs/ (not pushed to GitHub)
