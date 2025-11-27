@@ -42,6 +42,10 @@ nessus_results.json
 nessus_findings.txt
 NESSUS_GUIDE.txt
 
+# Generated guide files
+*_GUIDE.txt
+*_ATTACK_GUIDE.txt
+
 # IDE
 .vscode/
 .idea/
