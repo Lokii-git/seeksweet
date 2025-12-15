@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-DCSeek - Domain Controller Discovery Tool
+DCSeek - Advanced Domain Controller Discovery & Enumeration Tool
 Reads IPs from iplist.txt and identifies potential Active Directory Domain Controllers
-Can enumerate users and SMB shares using enum4linux
+
+Features:
+- Multi-threaded DC discovery with port scanning
+- SMB signing vulnerability detection (critical for relay attacks)
+- Username enumeration with Kerbrute integration
+- Automatic SecLists download and username generation (8 formats)
+- enum4linux integration for user/share enumeration
+- Real-time output display and comprehensive reporting
+- Cross-platform Kerbrute auto-download (Windows/Linux/macOS)
 """
 
 import socket
@@ -13,6 +21,9 @@ import argparse
 import os
 import re
 import json
+import requests
+import itertools
+import platform
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Set, Optional, Dict
@@ -586,13 +597,560 @@ def save_enum_summary(enum_results: List[Dict], filename: str = "enum4linux_summ
         return False
 
 
+def download_seclists_names() -> tuple[str, str]:
+    """
+    Download names.txt and familynames-usa-top1000.txt from SecLists GitHub repo.
+    
+    Returns:
+        Tuple of (first_names_file, last_names_file) paths
+    """
+    first_names_url = "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Usernames/Names/names.txt"
+    last_names_url = "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Usernames/Names/familynames-usa-top1000.txt"
+    
+    first_names_file = "names.txt"
+    last_names_file = "familynames-usa-top1000.txt"
+    
+    print("[*] Downloading SecLists name files...")
+    
+    try:
+        # Download first names
+        if not os.path.exists(first_names_file):
+            print(f"[*] Downloading {first_names_file}...")
+            response = requests.get(first_names_url, timeout=30)
+            response.raise_for_status()
+            with open(first_names_file, 'w') as f:
+                f.write(response.text)
+            print(f"[+] Downloaded {first_names_file}")
+        else:
+            print(f"[*] {first_names_file} already exists, skipping download")
+        
+        # Download last names
+        if not os.path.exists(last_names_file):
+            print(f"[*] Downloading {last_names_file}...")
+            response = requests.get(last_names_url, timeout=30)
+            response.raise_for_status()
+            with open(last_names_file, 'w') as f:
+                f.write(response.text)
+            print(f"[+] Downloaded {last_names_file}")
+        else:
+            print(f"[*] {last_names_file} already exists, skipping download")
+        
+        return first_names_file, last_names_file
+    
+    except requests.RequestException as e:
+        print(f"[!] Error downloading SecLists files: {e}")
+        return None, None
+    except Exception as e:
+        print(f"[!] Unexpected error downloading files: {e}")
+        return None, None
+
+
+def load_names_from_file(filename: str) -> List[str]:
+    """
+    Load names from a file, one name per line.
+    
+    Args:
+        filename: Path to the names file
+        
+    Returns:
+        List of names
+    """
+    names = []
+    try:
+        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                name = line.strip().lower()
+                if name and not name.startswith('#'):
+                    names.append(name)
+        return names
+    except Exception as e:
+        print(f"[!] Error loading names from {filename}: {e}")
+        return []
+
+
+def generate_usernames(first_names: List[str], last_names: List[str], format_string: str, limit: int = 50000) -> List[str]:
+    """
+    Generate usernames based on format string.
+    
+    Args:
+        first_names: List of first names
+        last_names: List of last names
+        format_string: Format like '{f}{last}', '{first}.{last}', etc.
+        limit: Maximum number of usernames to generate
+        
+    Returns:
+        List of generated usernames
+    """
+    usernames = set()
+    count = 0
+    
+    print(f"[*] Generating usernames with format: {format_string}")
+    
+    for first, last in itertools.product(first_names, last_names):
+        if count >= limit:
+            break
+            
+        try:
+            username = format_string.format(
+                first=first.lower(),
+                last=last.lower(),
+                f=first[0].lower() if first else '',
+                l=last[0].lower() if last else ''
+            )
+            
+            # Only add valid usernames (no spaces, reasonable length)
+            if username and ' ' not in username and 2 <= len(username) <= 20:
+                usernames.add(username)
+                count += 1
+        except (IndexError, KeyError):
+            continue
+    
+    return sorted(list(usernames))
+
+
+def get_username_format() -> str:
+    """
+    Get username format from user via menu or manual input.
+    
+    Returns:
+        Format string for username generation
+    """
+    print("\n" + "="*70)
+    print("USERNAME FORMAT SELECTION")
+    print("="*70)
+    print("Common username formats:")
+    print("  1. {f}{last}        - jsmith, bdoe, etc.")
+    print("  2. {f}.{last}       - j.smith, b.doe, etc.")
+    print("  3. {first}.{last}   - john.smith, bob.doe, etc.")
+    print("  4. {first}{last}    - johnsmith, bobdoe, etc.")
+    print("  5. {last}{f}        - smithj, doeb, etc.")
+    print("  6. {first}_{last}   - john_smith, bob_doe, etc.")
+    print("  7. {f}{l}{last}     - jssmith, bddoe, etc.")
+    print("  8. Custom format    - Enter your own")
+    
+    formats = {
+        '1': '{f}{last}',
+        '2': '{f}.{last}',
+        '3': '{first}.{last}',
+        '4': '{first}{last}',
+        '5': '{last}{f}',
+        '6': '{first}_{last}',
+        '7': '{f}{l}{last}'
+    }
+    
+    while True:
+        try:
+            choice = input("\nSelect format (1-8): ").strip()
+            
+            if choice in formats:
+                return formats[choice]
+            elif choice == '8':
+                print("\nCustom format options:")
+                print("  {first} - Full first name")
+                print("  {last}  - Full last name")
+                print("  {f}     - First initial")
+                print("  {l}     - Last initial")
+                print("\nExample: {first}.{l}.{last} would generate john.s.smith")
+                
+                custom = input("Enter custom format: ").strip()
+                if custom:
+                    return custom
+                else:
+                    print("[!] Invalid format, please try again")
+            else:
+                print("[!] Invalid choice, please select 1-8")
+        except KeyboardInterrupt:
+            print("\n[!] Operation cancelled")
+            return None
+
+
+def save_usernames(usernames: List[str], domain: str, format_desc: str) -> str:
+    """
+    Save generated usernames to file.
+    
+    Args:
+        usernames: List of usernames
+        domain: Domain name for filename
+        format_desc: Format description for filename
+        
+    Returns:
+        Filename where usernames were saved
+    """
+    # Create safe filename
+    safe_domain = re.sub(r'[^a-zA-Z0-9]', '_', domain.lower())
+    safe_format = re.sub(r'[^a-zA-Z0-9]', '_', format_desc)
+    filename = f"{safe_domain}_{safe_format}_usernames_{len(usernames)}.txt"
+    
+    try:
+        with open(filename, 'w') as f:
+            f.write(f"# Generated usernames for domain: {domain}\n")
+            f.write(f"# Format: {format_desc}\n")
+            f.write(f"# Total usernames: {len(usernames)}\n")
+            f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("\n")
+            
+            for username in usernames:
+                f.write(f"{username}\n")
+        
+        print(f"[+] Saved {len(usernames)} usernames to: {filename}")
+        return filename
+    
+    except Exception as e:
+        print(f"[!] Error saving usernames: {e}")
+        return None
+
+
+def download_kerbrute() -> str:
+    """
+    Download appropriate Kerbrute binary for the current platform.
+    
+    Returns:
+        Path to downloaded kerbrute binary, or None if failed
+    """
+    import platform
+    
+    print("[*] Kerbrute not found, attempting to download...")
+    
+    # Determine platform and architecture
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    
+    # Map to kerbrute release naming
+    if system == "windows":
+        if "64" in machine or "amd64" in machine:
+            binary_name = "kerbrute_windows_amd64.exe"
+            local_name = "kerbrute.exe"
+        else:
+            binary_name = "kerbrute_windows_386.exe"
+            local_name = "kerbrute.exe"
+    elif system == "linux":
+        if "64" in machine or "amd64" in machine or "x86_64" in machine:
+            binary_name = "kerbrute_linux_amd64"
+            local_name = "kerbrute"
+        elif "arm64" in machine or "aarch64" in machine:
+            binary_name = "kerbrute_linux_arm64"
+            local_name = "kerbrute"
+        else:
+            binary_name = "kerbrute_linux_386"
+            local_name = "kerbrute"
+    elif system == "darwin":  # macOS
+        if "arm64" in machine:
+            binary_name = "kerbrute_darwin_arm64"
+            local_name = "kerbrute"
+        else:
+            binary_name = "kerbrute_darwin_amd64"
+            local_name = "kerbrute"
+    else:
+        print(f"[!] Unsupported platform: {system}")
+        return None
+    
+    # Download URL (using latest release)
+    download_url = f"https://github.com/ropnop/kerbrute/releases/latest/download/{binary_name}"
+    
+    try:
+        print(f"[*] Downloading {binary_name} from GitHub...")
+        response = requests.get(download_url, timeout=60)
+        response.raise_for_status()
+        
+        # Save to current directory
+        with open(local_name, 'wb') as f:
+            f.write(response.content)
+        
+        # Make executable on Unix systems
+        if system != "windows":
+            import stat
+            os.chmod(local_name, os.stat(local_name).st_mode | stat.S_IEXEC)
+        
+        print(f"[+] Downloaded kerbrute to: {local_name}")
+        return local_name
+        
+    except requests.RequestException as e:
+        print(f"[!] Failed to download kerbrute: {e}")
+        return None
+    except Exception as e:
+        print(f"[!] Error downloading kerbrute: {e}")
+        return None
+
+
+def run_kerbrute(dc_ip: str, domain: str, usernames_file: str) -> bool:
+    """
+    Run Kerbrute to enumerate valid usernames.
+    
+    Args:
+        dc_ip: Domain Controller IP address
+        domain: Domain name
+        usernames_file: Path to usernames file
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    # Look for kerbrute binary
+    kerbrute_paths = [
+        './kerbrute',
+        './kerbrute.exe',
+        './kerbrute_linux_amd64',
+        'kerbrute',
+        '/usr/local/bin/kerbrute',
+        '/opt/kerbrute/kerbrute'
+    ]
+    
+    kerbrute_binary = None
+    for path in kerbrute_paths:
+        try:
+            result = subprocess.run([path, '--help'], capture_output=True, timeout=5)
+            if result.returncode == 0 or 'kerbrute' in result.stderr.decode().lower():
+                kerbrute_binary = path
+                break
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            continue
+    
+    if not kerbrute_binary:
+        # Try to download kerbrute automatically
+        kerbrute_binary = download_kerbrute()
+        if not kerbrute_binary:
+            print("[!] Failed to download kerbrute automatically.")
+            print("[!] Please manually install kerbrute:")
+            print("    https://github.com/ropnop/kerbrute/releases")
+            return False
+    
+    output_file = f"validusers_{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    print(f"[*] Running Kerbrute against {dc_ip} for domain {domain}...")
+    print(f"[*] Using usernames file: {usernames_file}")
+    print(f"[*] Output will be saved to: {output_file}")
+    
+    try:
+        cmd = [
+            kerbrute_binary, 'userenum',
+            '--dc', dc_ip,
+            '-d', domain,
+            usernames_file,
+            '-o', output_file
+        ]
+        
+        print(f"[*] Command: {' '.join(cmd)}")
+        print("[*] This may take several minutes depending on the username list size...")
+        print(f"[*] Kerbrute output will be displayed in real-time below:")
+        print("-" * 70)
+        
+        # Run kerbrute with real-time output display
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Display output in real-time and capture valid users
+        valid_users = []
+        
+        try:
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    # Print the line for real-time viewing
+                    print(line.rstrip())
+                    
+                    # Also capture valid usernames from stdout
+                    if '[+] VALID USERNAME:' in line:
+                        username_match = re.search(r'\[\+\] VALID USERNAME:\s*(\S+)', line)
+                        if username_match:
+                            username = username_match.group(1).split('@')[0]  # Remove @domain if present
+                            if username not in valid_users:
+                                valid_users.append(username)
+            
+            # Wait for process to complete
+            return_code = process.wait(timeout=3600)
+            
+        except subprocess.TimeoutExpired:
+            process.kill()
+            print("\n[!] Kerbrute timed out after 1 hour")
+            return False
+        
+        print("-" * 70)
+        
+        if return_code == 0:
+            print(f"[+] Kerbrute completed successfully!")
+            
+            # Also try to parse the output file for any missed users
+            if os.path.exists(output_file):
+                try:
+                    with open(output_file, 'r') as f:
+                        content = f.read()
+                        for line in content.split('\n'):
+                            if '[+] VALID USERNAME:' in line:
+                                username_match = re.search(r'\[\+\] VALID USERNAME:\s*(\S+)', line)
+                                if username_match:
+                                    username = username_match.group(1).split('@')[0]
+                                    if username not in valid_users:
+                                        valid_users.append(username)
+                except Exception as e:
+                    print(f"[!] Error reading kerbrute output file: {e}")
+            
+            # Display summary of found users
+            if valid_users:
+                print(f"\n[+] SUMMARY: Found {len(valid_users)} valid usernames!")
+                print("Valid users discovered:")
+                for user in valid_users[:15]:  # Show first 15
+                    print(f"  - {user}")
+                if len(valid_users) > 15:
+                    print(f"  ... and {len(valid_users) - 15} more (check {output_file} for full list)")
+                
+                # Save clean username list
+                clean_users_file = f"validusers_clean_{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                try:
+                    with open(clean_users_file, 'w') as f:
+                        f.write(f"# Valid usernames found for domain: {domain}\n")
+                        f.write(f"# Total users: {len(valid_users)}\n")
+                        f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                        for user in sorted(valid_users):
+                            f.write(f"{user}\n")
+                    print(f"[+] Clean username list saved to: {clean_users_file}")
+                except Exception as e:
+                    print(f"[!] Error saving clean username list: {e}")
+                    
+            else:
+                print("\n[-] No valid usernames found")
+            
+            return True
+        else:
+            print(f"[!] Kerbrute failed with return code: {return_code}")
+            return False
+    
+    except subprocess.TimeoutExpired:
+        print("[!] Kerbrute timed out after 1 hour")
+        return False
+    except Exception as e:
+        print(f"[!] Error running Kerbrute: {e}")
+        return False
+
+
+def username_enumeration_menu(domain_controllers: List[Dict]) -> bool:
+    """
+    Interactive menu for username enumeration.
+    
+    Args:
+        domain_controllers: List of discovered DCs
+        
+    Returns:
+        True if enumeration was performed, False otherwise
+    """
+    if not domain_controllers:
+        print("[!] No domain controllers available for username enumeration")
+        return False
+    
+    print("\n" + "="*70)
+    print("USERNAME ENUMERATION WITH KERBRUTE")
+    print("="*70)
+    print("This will:")
+    print("  1. Download SecLists name files (names.txt, familynames-usa-top1000.txt)")
+    print("  2. Generate usernames based on your chosen format")
+    print("  3. Use Kerbrute to test for valid usernames against the DC")
+    print("\nAvailable Domain Controllers:")
+    
+    for i, dc in enumerate(domain_controllers, 1):
+        print(f"  {i}. {dc['ip']} ({dc.get('hostname', 'Unknown hostname')})")
+    
+    # Get user confirmation
+    try:
+        choice = input("\nProceed with username enumeration? (y/N): ").strip().lower()
+        if choice not in ['y', 'yes']:
+            return False
+    except KeyboardInterrupt:
+        print("\n[!] Operation cancelled")
+        return False
+    
+    # Select DC
+    if len(domain_controllers) > 1:
+        try:
+            dc_choice = input(f"\nSelect DC to target (1-{len(domain_controllers)}): ").strip()
+            dc_index = int(dc_choice) - 1
+            if not (0 <= dc_index < len(domain_controllers)):
+                print("[!] Invalid DC selection")
+                return False
+        except (ValueError, KeyboardInterrupt):
+            print("[!] Invalid selection")
+            return False
+    else:
+        dc_index = 0
+    
+    selected_dc = domain_controllers[dc_index]
+    
+    # Get domain name
+    domain = input("\nEnter domain name (e.g., corp.local, contoso.com): ").strip()
+    if not domain:
+        print("[!] Domain name is required")
+        return False
+    
+    # Download SecLists files
+    first_names_file, last_names_file = download_seclists_names()
+    if not first_names_file or not last_names_file:
+        return False
+    
+    # Load names
+    print("[*] Loading names from files...")
+    first_names = load_names_from_file(first_names_file)
+    last_names = load_names_from_file(last_names_file)
+    
+    if not first_names or not last_names:
+        print("[!] Failed to load names from files")
+        return False
+    
+    print(f"[+] Loaded {len(first_names)} first names and {len(last_names)} last names")
+    
+    # Get username format
+    format_string = get_username_format()
+    if not format_string:
+        return False
+    
+    # Ask about limit
+    try:
+        limit_input = input("\nUsername limit (default 40000, max 100000): ").strip()
+        if limit_input:
+            limit = min(int(limit_input), 100000)
+        else:
+            limit = 40000
+    except ValueError:
+        limit = 40000
+    
+    # Generate usernames
+    usernames = generate_usernames(first_names, last_names, format_string, limit)
+    
+    if not usernames:
+        print("[!] No usernames generated")
+        return False
+    
+    print(f"[+] Generated {len(usernames)} unique usernames")
+    
+    # Save usernames
+    format_desc = format_string.replace('{', '').replace('}', '')
+    usernames_file = save_usernames(usernames, domain, format_desc)
+    
+    if not usernames_file:
+        return False
+    
+    # Run Kerbrute
+    print(f"\n[*] Starting Kerbrute enumeration against {selected_dc['ip']}...")
+    success = run_kerbrute(selected_dc['ip'], domain, usernames_file)
+    
+    if success:
+        print("\n[+] Username enumeration completed!")
+        print(f"[*] Check the generated files:")
+        print(f"    - {usernames_file} (generated usernames)")
+        print(f"    - validusers_{domain}_*.txt (kerbrute results)")
+    
+    return success
+
+
 def print_banner():
     """Print DCSeek banner"""
     banner = """
 ================================================================
-                    DCSeek v1.1
-          Domain Controller Discovery Tool
-            with Enum4linux Integration
+                    DCSeek v1.3
+     Advanced Domain Controller Discovery & Enumeration
+   DC Discovery | SMB Relay Detection | Username Enumeration
+        Enum4linux + Kerbrute + SecLists Integration
                github.com/Lokii-git/seeksweet
 ================================================================
 """
@@ -611,6 +1169,8 @@ Examples:
   %(prog)s -f ips.txt -o results.txt    # Custom output file
   %(prog)s --enum                       # Run enum4linux on found DCs
   %(prog)s --enum --enum-only           # Only enumerate (skip DC discovery)
+  %(prog)s --kerbrute --domain corp.local --username-format "{f}{last}"  # Auto Kerbrute
+  %(prog)s --kerbrute --domain test.local --username-limit 20000         # Kerbrute with limit
         """
     )
     parser.add_argument('-f', '--file', default='iplist.txt', help='Input file with IPs (default: iplist.txt)')
@@ -622,6 +1182,10 @@ Examples:
     parser.add_argument('--enum-only', action='store_true', help='Only run enum4linux on IPs from dclist.txt (skip discovery)')
     parser.add_argument('--dclist', default='dclist.txt', help='DC list file (default: dclist.txt)')
     parser.add_argument('--enum-dir', default='enum4linux_results', help='Directory for enum4linux results (default: enum4linux_results)')
+    parser.add_argument('--kerbrute', action='store_true', help='Automatically run username enumeration with Kerbrute after DC discovery')
+    parser.add_argument('--domain', type=str, help='Domain name for Kerbrute enumeration (e.g., corp.local)')
+    parser.add_argument('--username-format', type=str, help='Username format for generation (e.g., {f}{last}, {first}.{last})')
+    parser.add_argument('--username-limit', type=int, default=40000, help='Maximum usernames to generate (default: 40000, max: 100000)')
     
     try:
         args = parser.parse_args()
@@ -852,7 +1416,7 @@ Examples:
             except Exception as e:
                 print(f"[!] Error enumerating {dc['ip']}: {e}")
         
-        # Save enum summary
+            # Save enum summary
         if enum_results:
             print("\n" + "="*70)
             print("ENUMERATION SUMMARY")
@@ -866,6 +1430,86 @@ Examples:
             print(f"Total shares found: {total_shares}")
             
             save_enum_summary(enum_results, "enum4linux_summary.txt")
+    
+    # Username enumeration with Kerbrute
+    if domain_controllers and not args.enum_only:
+        if args.kerbrute:
+            # Automated Kerbrute mode
+            if not args.domain:
+                print("\n[!] --domain parameter required for automated Kerbrute mode")
+                sys.exit(1)
+            
+            print("\n" + "="*70)
+            print("AUTOMATED KERBRUTE ENUMERATION")
+            print("="*70)
+            
+            # Use first DC
+            selected_dc = domain_controllers[0]
+            
+            # Download SecLists files
+            first_names_file, last_names_file = download_seclists_names()
+            if not first_names_file or not last_names_file:
+                print("[!] Failed to download SecLists files")
+                sys.exit(1)
+            
+            # Load names
+            print("[*] Loading names from files...")
+            first_names = load_names_from_file(first_names_file)
+            last_names = load_names_from_file(last_names_file)
+            
+            if not first_names or not last_names:
+                print("[!] Failed to load names from files")
+                sys.exit(1)
+            
+            print(f"[+] Loaded {len(first_names)} first names and {len(last_names)} last names")
+            
+            # Use provided format or default
+            format_string = args.username_format or '{f}{last}'
+            limit = min(args.username_limit, 100000)
+            
+            print(f"[*] Using username format: {format_string}")
+            print(f"[*] Username limit: {limit}")
+            
+            # Generate usernames
+            usernames = generate_usernames(first_names, last_names, format_string, limit)
+            
+            if not usernames:
+                print("[!] No usernames generated")
+                sys.exit(1)
+            
+            print(f"[+] Generated {len(usernames)} unique usernames")
+            
+            # Save usernames
+            format_desc = format_string.replace('{', '').replace('}', '')
+            usernames_file = save_usernames(usernames, args.domain, format_desc)
+            
+            if usernames_file:
+                # Run Kerbrute
+                print(f"\n[*] Starting Kerbrute enumeration against {selected_dc['ip']}...")
+                success = run_kerbrute(selected_dc['ip'], args.domain, usernames_file)
+                
+                if success:
+                    print("\n[+] Automated username enumeration completed!")
+                else:
+                    print("\n[!] Kerbrute enumeration failed")
+        else:
+            # Interactive menu mode
+            try:
+                print(f"\n{'='*70}")
+                print("NEXT STEP: USERNAME ENUMERATION")
+                print(f"{'='*70}")
+                print("DCSeek can now enumerate valid usernames using Kerbrute:")
+                print("  • Downloads SecLists name files automatically")
+                print("  • Generates usernames with customizable formats") 
+                print("  • Tests usernames against discovered Domain Controllers")
+                print("  • Shows real-time results with valid usernames found")
+                print(f"{'='*70}")
+                
+                choice = input("\n[*] Would you like to perform username enumeration with Kerbrute? (y/N): ").strip().lower()
+                if choice in ['y', 'yes']:
+                    username_enumeration_menu(domain_controllers)
+            except KeyboardInterrupt:
+                print("\n[!] Operation cancelled")
     
     sys.exit(0)
 

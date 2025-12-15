@@ -117,11 +117,11 @@ SEEK_TOOLS = [
         'script': 'dcseek/dcseek.py',
         'priority': 'CRITICAL',
         'phase': 'Discovery',
-        'description': 'Find Domain Controllers + DC SMB Signing vulnerabilities',
-        'why': 'Start here - identifies DCs and critical relay vulnerabilities',
-        'outputs': ['dclist.txt', 'dc_smb_status.txt'],
-        'typical_args': 'iplist.txt -v',
-        'new_features': 'DC SMB signing detection (CRITICAL vulnerability check)'
+        'description': 'Find Domain Controllers + SMB Relay Detection + Username Enumeration',
+        'why': 'Start here - identifies DCs, critical relay vulnerabilities, and enumerates valid usernames',
+        'outputs': ['dclist.txt', 'dc_smb_status.txt', 'validusers_*.txt', 'enum4linux_summary.txt'],
+        'typical_args': 'iplist.txt -v --enum --kerbrute --domain corp.local',
+        'new_features': 'SMB signing detection + Kerbrute integration + SecLists auto-download + 8 username formats'
     },
     {
         'id': 2,
